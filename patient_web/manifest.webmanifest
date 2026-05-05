@@ -1,0 +1,9 @@
+{
+  "name": "Niramay Patient Booking",
+  "short_name": "Niramay",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7fbf8",
+  "theme_color": "#0f766e",
+  "icons": []
+}

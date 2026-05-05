@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0f766e">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://www.gstatic.com https://accounts.google.com https://apis.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebaseappcheck.googleapis.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://*.google.com https://apis.google.com https://www.recaptcha.net; object-src 'none'; base-uri 'self'; form-action 'self';"
+    >
+    <meta name="description" content="Niramay hospital admin dashboard.">
+    <title>Niramay Admin</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Niramay Admin home">
+          <span class="brand-mark">N</span>
+          <span>
+            <strong>Niramay</strong>
+            <small>Admin dashboard</small>
+          </span>
+        </a>
+        <div class="topbar-actions">
+          <button id="signInBtn" class="btn" type="button">Sign in</button>
+          <button id="signOutBtn" class="btn ghost" type="button" hidden>Sign out</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="statusPanel" class="status-panel" role="status" hidden></section>
+
+        <!-- Sign-in prompt -->
+        <section id="signInView" class="center-card">
+          <p class="eyebrow">Hospital administration</p>
+          <h1>Sign in to manage your hospital.</h1>
+          <p class="muted">Use the Google account that owns your hospital profile.</p>
+        </section>
+
+        <!-- Dashboard -->
+        <section id="dashboardView" hidden>
+          <div class="dashboard-grid">
+            <!-- Hospital / Admin profile sidebar -->
+            <aside id="hospitalPanel" class="panel">
+              <div class="panel-head">
+                <p class="eyebrow">Hospital</p>
+                <button id="editAdminProfileBtn" class="btn small ghost" type="button">Edit</button>
+              </div>
+              <h2 id="hospitalName">Loading...</h2>
+              <p id="hospitalAddress" class="muted"></p>
+              <p id="hospitalCity" class="muted"></p>
+              <p id="hospitalPhone" class="muted"></p>
+              <p id="hospitalId" class="mono muted"></p>
+
+              <div id="adminProfileDetails" class="profile-details"></div>
+            </aside>
+
+            <!-- Main workspace -->
+            <div class="workspace">
+              <nav class="tab-bar">
+                <button class="tab active" data-tab="schedule">Schedule</button>
+                <button class="tab" data-tab="members">Members</button>
+                <button class="tab" data-tab="bookings">Bookings</button>
+              </nav>
+
+              <!-- Schedule tab -->
+              <section id="scheduleTab" class="tab-content">
+                <div class="schedule-controls">
+                  <div class="control-group">
+                    <label for="doctorSelect">Doctor</label>
+                    <select id="doctorSelect">
+                      <option value="">Select doctor</option>
+                    </select>
+                  </div>
+                  <div class="control-group">
+                    <label for="dateSelect">Date</label>
+                    <input id="dateSelect" type="date">
+                  </div>
+                  <button id="loadSlotsBtn" class="btn" type="button">Load</button>
+                  <button id="connectCalendarBtn" class="btn ghost" type="button">Connect Calendar</button>
+                  <button id="authorSlotsBtn" class="btn ghost" type="button" title="Generate slots from template for this date">Author slots</button>
+                </div>
+                <div id="slotGrid" class="slot-grid">
+                  <div class="empty-state">Select a doctor and date to view the schedule.</div>
+                </div>
+              </section>
+
+              <!-- Members tab -->
+              <section id="membersTab" class="tab-content" hidden>
+                <div id="memberList" class="member-list">
+                  <div class="empty-state">Loading members...</div>
+                </div>
+              </section>
+
+              <!-- Bookings tab -->
+              <section id="bookingsTab" class="tab-content" hidden>
+                <div class="schedule-controls">
+                  <div class="control-group">
+                    <label for="bookingDateFrom">From</label>
+                    <input id="bookingDateFrom" type="date">
+                  </div>
+                  <div class="control-group">
+                    <label for="bookingDateTo">To</label>
+                    <input id="bookingDateTo" type="date">
+                  </div>
+                  <button id="loadBookingsBtn" class="btn" type="button">Load</button>
+                </div>
+                <div id="bookingList" class="booking-list">
+                  <div class="empty-state">Select a date range to view bookings.</div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Admin Profile Dialog -->
+    <dialog id="adminProfileDialog">
+      <form id="adminProfileForm" method="dialog" class="dialog-card dialog-wide">
+        <p class="eyebrow">Hospital / Admin profile</p>
+        <h2>Edit profile</h2>
+        <div class="form-grid">
+          <label>
+            Your name
+            <input id="apName" autocomplete="name" maxlength="120" required>
+          </label>
+          <label>
+            Specialty
+            <input id="apSpecialty" placeholder="e.g. General Medicine, Pediatrics" maxlength="200">
+          </label>
+          <label>
+            Clinic / Hospital name
+            <input id="apClinicName" maxlength="200" required>
+          </label>
+          <label>
+            Phone
+            <input id="apPhone" type="tel" autocomplete="tel" maxlength="20">
+          </label>
+          <label class="span-2">
+            Clinic address
+            <input id="apClinicAddress" maxlength="500">
+          </label>
+          <label>
+            State
+            <input id="apState" maxlength="100">
+          </label>
+          <label>
+            District
+            <input id="apDistrict" maxlength="100">
+          </label>
+          <label>
+            City / Village
+            <input id="apCity" maxlength="100">
+          </label>
+          <label>
+            Years of experience
+            <input id="apYears" type="number" min="0" max="80">
+          </label>
+          <label class="span-2">
+            Services offered
+            <input id="apServices" placeholder="Comma-separated" maxlength="500">
+          </label>
+          <label class="span-2">
+            About
+            <textarea id="apAbout" rows="3" maxlength="2000"></textarea>
+          </label>
+          <label class="span-2">
+            Google Maps link
+            <input id="apMapsLink" type="url" placeholder="https://maps.google.com/..." maxlength="500">
+          </label>
+          <div class="span-2 location-row">
+            <button id="apUseLocationBtn" class="btn ghost small" type="button">Use current location</button>
+            <span id="apLocationStatus" class="muted" style="font-size:0.82rem"></span>
+          </div>
+          <label>
+            Latitude
+            <input id="apLat" type="number" step="any" readonly>
+          </label>
+          <label>
+            Longitude
+            <input id="apLng" type="number" step="any" readonly>
+          </label>
+        </div>
+        <menu>
+          <button value="cancel" class="btn ghost" type="button" id="cancelAdminProfileBtn">Cancel</button>
+          <button value="default" class="btn" type="submit">Save profile</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <!-- Doctor Profile Dialog -->
+    <dialog id="doctorProfileDialog">
+      <form id="doctorProfileForm" method="dialog" class="dialog-card dialog-wide">
+        <p class="eyebrow">Doctor profile</p>
+        <h2 id="doctorProfileTitle">Edit doctor</h2>
+        <input id="dpDoctorId" type="hidden">
+        <div class="form-grid">
+          <label>
+            Doctor name
+            <input id="dpName" autocomplete="name" maxlength="120" required>
+          </label>
+          <label>
+            Email
+            <input id="dpEmail" type="email" maxlength="200" required>
+          </label>
+          <label>
+            Specialty
+            <input id="dpSpecialty" placeholder="e.g. Cardiology" maxlength="200">
+          </label>
+          <label>
+            Phone
+            <input id="dpPhone" type="tel" maxlength="20">
+          </label>
+          <label>
+            License number
+            <input id="dpLicense" maxlength="100">
+          </label>
+          <label>
+            Years of experience
+            <input id="dpYears" type="number" min="0" max="80">
+          </label>
+          <label class="span-2">
+            Services offered
+            <input id="dpServices" placeholder="Comma-separated" maxlength="500">
+          </label>
+          <label class="span-2">
+            About
+            <textarea id="dpAbout" rows="3" maxlength="2000"></textarea>
+          </label>
+          <div class="span-2 location-row">
+            <button id="dpUseLocationBtn" class="btn ghost small" type="button">Use current location</button>
+            <span id="dpLocationStatus" class="muted" style="font-size:0.82rem"></span>
+          </div>
+          <label>
+            State
+            <input id="dpState" maxlength="100">
+          </label>
+          <label>
+            District
+            <input id="dpDistrict" maxlength="100">
+          </label>
+          <label>
+            City / Village
+            <input id="dpCity" maxlength="100">
+          </label>
+          <label>
+            Clinic address
+            <input id="dpClinicAddress" maxlength="500">
+          </label>
+          <label>
+            Latitude
+            <input id="dpLat" type="number" step="any" readonly>
+          </label>
+          <label>
+            Longitude
+            <input id="dpLng" type="number" step="any" readonly>
+          </label>
+        </div>
+        <menu>
+          <button value="cancel" class="btn ghost" type="button" id="cancelDoctorProfileBtn">Cancel</button>
+          <button value="default" class="btn" type="submit">Save doctor</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <!-- Author Slots Dialog -->
+    <dialog id="authorDialog">
+      <form id="authorForm" method="dialog" class="dialog-card">
+        <p class="eyebrow">Author slots</p>
+        <h2 id="authorDialogTitle">Generate slots for date</h2>
+        <p class="muted">Enter slot duration and working hours. Slots will be generated and written to Firestore.</p>
+        <label>
+          Start time
+          <input id="authorStart" type="time" value="09:00" required>
+        </label>
+        <label>
+          End time
+          <input id="authorEnd" type="time" value="17:00" required>
+        </label>
+        <label>
+          Slot duration (minutes)
+          <input id="authorDuration" type="number" value="15" min="5" max="120" required>
+        </label>
+        <label>
+          Break start (optional)
+          <input id="authorBreakStart" type="time">
+        </label>
+        <label>
+          Break end (optional)
+          <input id="authorBreakEnd" type="time">
+        </label>
+        <menu>
+          <button value="cancel" class="btn ghost" type="button" id="cancelAuthorBtn">Cancel</button>
+          <button value="default" class="btn" type="submit">Generate &amp; save</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <!-- Slot Action Dialog -->
+    <dialog id="slotActionDialog">
+      <div class="dialog-card">
+        <p class="eyebrow" id="slotActionEyebrow">Slot action</p>
+        <h2 id="slotActionTitle">Slot</h2>
+        <p id="slotActionMeta" class="muted"></p>
+        <menu id="slotActionMenu"></menu>
+      </div>
+    </dialog>
+
+    <script src="/config.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

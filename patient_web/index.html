@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0f766e">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://accounts.google.com https://apis.google.com https://www.recaptcha.net https://pagead2.googlesyndication.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebaseappcheck.googleapis.com https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; frame-src https://accounts.google.com https://*.firebaseapp.com https://*.google.com https://apis.google.com https://www.recaptcha.net https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+    >
+    <meta
+      name="description"
+      content="Book appointments with Niramay providers from the web."
+    >
+    <title>Niramay Patient Booking</title>
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="stylesheet" href="/styles.css?v=20260426-search-slots-1">
+  </head>
+  <body>
+    <aside id="desktopLeftAd" class="ad-rail ad-rail-left" aria-label="Sponsored" hidden></aside>
+    <aside id="desktopRightAd" class="ad-rail ad-rail-right" aria-label="Sponsored" hidden></aside>
+    <div id="mobileBottomAd" class="mobile-ad-bar" aria-label="Sponsored" hidden></div>
+
+    <section id="hospitalLinkChoice" class="link-choice" hidden>
+      <div class="link-choice-card">
+        <img src="/assets/patient_logo_transparent.png" alt="">
+        <p class="eyebrow">Hospital link</p>
+        <h1>Open hospital booking</h1>
+        <p>Continue in browser or install Niramay Aarogya.</p>
+        <div class="link-choice-actions">
+          <button id="continueWebBtn" type="button">Continue web</button>
+          <a id="installAppBtn" class="ghost button-link" href="https://play.google.com/store/apps/details?id=com.vana.health.patient.instant" target="_blank" rel="noopener">
+            Install app
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <div id="app" class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="Niramay home">
+          <span class="brand-mark">
+            <img src="/assets/patient_logo_transparent.png" alt="">
+          </span>
+          <span>
+            <strong>Niramay</strong>
+            <small>Patient booking</small>
+          </span>
+        </a>
+        <button id="topCityPill" class="city-pill" type="button" hidden>
+          <span>City</span>
+          <strong id="topCityLabel">Choose city</strong>
+        </button>
+        <div class="topbar-actions">
+          <button id="myBookingsBtn" class="icon-text ghost" type="button" hidden>
+            My bookings
+          </button>
+          <button id="signInBtn" class="icon-text" type="button">Sign in</button>
+          <button id="signOutBtn" class="icon-text ghost" type="button" hidden>
+            Sign out
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section id="statusPanel" class="status-panel" role="status" hidden></section>
+
+        <section id="welcomeView" class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Appointments without app installs</p>
+            <h1>Find a provider, then book your visit.</h1>
+            <p>
+              Sign in with Google, choose your city, then search hospitals,
+              doctors, or specialities nearby. Provider links open directly.
+            </p>
+          </div>
+          <section class="lookup-panel" aria-label="Provider discovery">
+            <div id="signedOutSearchPrompt" class="search-auth-prompt">
+              <p class="eyebrow">Google sign-in</p>
+              <h2>Start with your Gmail account.</h2>
+              <p>After sign-in, choose your city and find providers near you.</p>
+            </div>
+            <section id="cityPanel" class="city-panel" hidden>
+              <div class="city-bar">
+                <div>
+                  <p class="eyebrow">Selected city</p>
+                  <h2 id="cityLabel">Choose city</h2>
+                </div>
+                <button id="useLocationBtn" class="ghost" type="button">
+                  Use current location
+                </button>
+              </div>
+              <form id="cityForm" class="city-form">
+                <label for="cityInput">Search city name</label>
+                <input
+                  id="cityInput"
+                  name="city"
+                  autocomplete="address-level2"
+                  placeholder="Enter city"
+                >
+              </form>
+              <div id="citySuggestions" class="suggestion-list"></div>
+            </section>
+            <form id="searchForm" class="search-form" hidden>
+              <label for="searchInput">Search hospitals, doctors, or speciality</label>
+              <div class="lookup-row">
+                <input
+                  id="searchInput"
+                  name="search"
+                  autocomplete="off"
+                  value="all"
+                  placeholder="Search in selected city"
+                >
+                <button id="searchBtn" type="submit">Search</button>
+              </div>
+            </form>
+            <div id="searchResults" class="search-results"></div>
+          </section>
+        </section>
+
+        <section id="providerView" class="provider-layout" hidden>
+          <aside class="provider-sidebar">
+            <div id="hospitalCard" class="summary-block skeleton"></div>
+            <div id="profileCard" class="summary-block"></div>
+          </aside>
+
+          <section class="booking-workspace">
+            <div class="workspace-head">
+              <div>
+                <p class="eyebrow">Choose doctor</p>
+                <h2 id="workspaceTitle">Available doctors</h2>
+              </div>
+              <button id="refreshBtn" class="ghost" type="button">Refresh</button>
+            </div>
+            <div id="doctorList" class="doctor-grid"></div>
+            <div id="slotPanel" class="slot-panel" hidden>
+              <div class="slot-panel-head">
+                <div>
+                  <p id="selectedDoctorMeta" class="eyebrow"></p>
+                  <h3 id="selectedDoctorName"></h3>
+                </div>
+                <input id="dateInput" type="date" aria-label="Appointment date">
+              </div>
+              <div id="slotList" class="slot-grid"></div>
+            </div>
+          </section>
+        </section>
+
+        <section id="bookingsView" class="bookings-view" hidden>
+          <div class="workspace-head">
+            <div>
+              <p class="eyebrow">Receipts</p>
+              <h2>My bookings</h2>
+            </div>
+            <button id="backToBookingBtn" class="ghost" type="button">Back</button>
+          </div>
+          <div id="bookingsList" class="booking-list"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="profileDialog">
+      <form id="profileForm" method="dialog" class="dialog-card">
+        <h2>Patient details</h2>
+        <p>Edit the name and phone for this visit. Gmail stays in the background for sign-in and calendar booking.</p>
+        <label>
+          Name
+          <input id="patientName" autocomplete="name" required maxlength="80">
+        </label>
+        <label>
+          Phone
+          <input id="patientPhone" autocomplete="tel" inputmode="tel" required maxlength="20">
+        </label>
+        <menu>
+          <button id="cancelProfileBtn" value="cancel" class="ghost" type="button">
+            Cancel
+          </button>
+          <button value="default" type="submit">Save</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="dateDialog">
+      <form id="dateForm" method="dialog" class="dialog-card">
+        <p class="eyebrow">Appointment date</p>
+        <h2 id="dateDialogTitle">Choose date</h2>
+        <label>
+          Date
+          <input id="promptDateInput" type="date" required>
+        </label>
+        <menu>
+          <button id="cancelDateBtn" value="cancel" class="ghost" type="button">
+            Cancel
+          </button>
+          <button id="confirmDateBtn" value="default" type="submit">View slots</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="bookingDialog">
+      <form id="bookingConfirmForm" method="dialog" class="dialog-card booking-confirm-card">
+        <p class="eyebrow">Confirm appointment</p>
+        <h2 id="bookingConfirmTitle">Book appointment</h2>
+        <dl class="confirm-details">
+          <div>
+            <dt>Doctor</dt>
+            <dd id="bookingConfirmDoctor"></dd>
+          </div>
+          <div>
+            <dt>Date</dt>
+            <dd id="bookingConfirmDate"></dd>
+          </div>
+          <div>
+            <dt>Time</dt>
+            <dd id="bookingConfirmTime"></dd>
+          </div>
+        </dl>
+        <div class="confirm-patient-fields">
+          <label>
+            Patient name
+            <input id="bookingPatientName" autocomplete="name" required maxlength="80">
+          </label>
+          <label>
+            Phone
+            <input id="bookingPatientPhone" autocomplete="tel" inputmode="tel" required maxlength="20">
+          </label>
+        </div>
+        <menu>
+          <button id="cancelBookingConfirmBtn" value="cancel" class="ghost" type="button">
+            Cancel
+          </button>
+          <button id="confirmBookingBtn" value="default" type="submit">Book slot</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script src="/config.js?v=20260426-app-check-1"></script>
+    <script type="module" src="/app.js?v=20260505-deeplink-1"></script>
+  </body>
+</html>
