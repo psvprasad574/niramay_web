@@ -45,17 +45,7 @@ const GOOGLE_SIGN_IN_STATE_KEY = "niramay.googleSignInState";
 const GOOGLE_SIGN_IN_RETURN_KEY = "niramay.googleSignInReturnUrl";
 const GOOGLE_ACCESS_GRANTED_KEY = "niramay.googleAccessGranted.v1";
 const AUTH_DEBUG = new URLSearchParams(location.search).has("debugAuth");
-const FIREBASE_CONFIG = {
-  projectId: "vana-apps",
-  appId: "1:76866563498:web:18f532b053a7b5a6d58fd3",
-  storageBucket: "vana-apps.firebasestorage.app",
-  apiKey: "AIzaSyBHwSpmZGf-xvyZUDloiqgOLBlHnSlD3ko",
-  authDomain: location.hostname === "vana-apps.web.app"
-    ? "vana-apps.web.app"
-    : "vana-apps.firebaseapp.com",
-  messagingSenderId: "76866563498",
-  measurementId: "G-P0046G1CXW",
-};
+const FIREBASE_CONFIG_URL = "/__/firebase/init.json";
 
 const els = {
   signInBtn: document.querySelector("#signInBtn"),
@@ -174,8 +164,21 @@ async function callPatientFunction(name, data = {}) {
   return httpsCallable(state.functions, name)(data);
 }
 
+async function loadFirebaseConfig() {
+  if (PUBLIC_CONFIG.firebaseConfig) {
+    return PUBLIC_CONFIG.firebaseConfig;
+  }
+  const response = await fetch(FIREBASE_CONFIG_URL, { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new Error(
+      "Firebase config is unavailable. Deploy on Firebase Hosting or set window.NIRAMAY_PUBLIC_CONFIG.firebaseConfig for local development.",
+    );
+  }
+  return response.json();
+}
+
 async function main() {
-  state.app = initializeApp(FIREBASE_CONFIG);
+  state.app = initializeApp(await loadFirebaseConfig());
   initializePatientAppCheck();
   initializeBannerAds();
   state.auth = getAuth(state.app);

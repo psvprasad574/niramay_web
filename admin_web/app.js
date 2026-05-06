@@ -36,18 +36,7 @@ const APP_CHECK_CONFIG_ERROR =
 const GOOGLE_SIGN_IN_STATE_KEY = "niramay.admin.signInState";
 const GOOGLE_SIGN_IN_RETURN_KEY = "niramay.admin.signInReturn";
 const PATIENT_WEB_BASE_URL = ADMIN_CONFIG.patientWebBaseUrl || "https://vana-apps.web.app";
-
-const FIREBASE_CONFIG = {
-  projectId: "vana-apps",
-  appId: "1:76866563498:web:18f532b053a7b5a6d58fd3",
-  storageBucket: "vana-apps.firebasestorage.app",
-  apiKey: "AIzaSyBHwSpmZGf-xvyZUDloiqgOLBlHnSlD3ko",
-  authDomain: location.hostname === "localhost" || location.hostname === "127.0.0.1"
-    ? "vana-apps.firebaseapp.com"
-    : location.hostname,
-  messagingSenderId: "76866563498",
-  measurementId: "G-P0046G1CXW",
-};
+const FIREBASE_CONFIG_URL = "/__/firebase/init.json";
 
 // ---------------------------------------------------------------------------
 // DOM
@@ -160,7 +149,7 @@ const state = {
 main().catch(showError);
 
 async function main() {
-  state.app = initializeApp(FIREBASE_CONFIG);
+  state.app = initializeApp(await loadFirebaseConfig());
   initializeAdminAppCheck();
   state.auth = getAuth(state.app);
   state.db = getFirestore(state.app);
@@ -181,6 +170,19 @@ async function main() {
       }
     }
   });
+}
+
+async function loadFirebaseConfig() {
+  if (ADMIN_CONFIG.firebaseConfig) {
+    return ADMIN_CONFIG.firebaseConfig;
+  }
+  const response = await fetch(FIREBASE_CONFIG_URL, { credentials: "same-origin" });
+  if (!response.ok) {
+    throw new Error(
+      "Firebase config is unavailable. Deploy on Firebase Hosting or set window.NIRAMAY_ADMIN_CONFIG.firebaseConfig for local development.",
+    );
+  }
+  return response.json();
 }
 
 function initializeAdminAppCheck() {
