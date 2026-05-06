@@ -1033,9 +1033,30 @@ async function buildSearchResults(doctors, searchText) {
     }
   }
 
+  const summaries = await fetchHospitalSummaries([...byHospital.keys()]);
+  for (const [hospitalId, summary] of summaries.entries()) {
+    const result = byHospital.get(hospitalId);
+    if (!result) continue;
+    result.hospitalName = summary.name || result.hospitalName || "Hospital";
+    result.address = result.address || summary.address || "";
+    result.city = result.city || summary.city || "";
+  }
+
   return [...byHospital.values()].sort((a, b) =>
     a.hospitalName.localeCompare(b.hospitalName),
   );
+}
+
+async function fetchHospitalSummaries(hospitalIds) {
+  const summaries = new Map();
+  await Promise.all(hospitalIds.map(async (hospitalId) => {
+    try {
+      summaries.set(hospitalId, await fetchHospital(hospitalId));
+    } catch (_) {
+      // Search results can still show doctor records when hospital metadata is unavailable.
+    }
+  }));
+  return summaries;
 }
 
 async function searchHospitalsByName(searchText) {
@@ -1055,9 +1076,9 @@ async function searchHospitalsByName(searchText) {
       const adminProfile = data.adminProfile || {};
       return {
         hospitalId: item.id,
-        name: adminProfile.clinicName || data.name || data.clinicName || item.id,
-        address: adminProfile.clinicAddress || adminProfile.address || data.address || "",
-        city: adminProfile.city || data.city || "",
+        name: firstText(adminProfile.clinicName, data.clinicName, data.name, "Hospital"),
+        address: firstText(adminProfile.clinicAddress, adminProfile.address, data.clinicAddress, data.address),
+        city: firstText(adminProfile.city, data.city),
       };
     })
     .filter((hospital) => includesSearch(hospital.name, searchText));
@@ -1204,7 +1225,8 @@ function locationErrorMessage(error) {
 }
 
 async function loadHospitalContext(hospitalId) {
-  state.hospitalId = hospitalId;
+  const requestedHospitalId = cleanId(hospitalId);
+  state.hospitalId = requestedHospitalId;
   clearStatus();
   els.welcomeView.hidden = true;
   els.bookingsView.hidden = true;
@@ -1217,29 +1239,69 @@ async function loadHospitalContext(hospitalId) {
   try {
     if (!state.user) {
       showStatus("Sign in with Google to view doctors and book appointments.");
-      renderHospitalShell(hospitalId);
+      renderHospitalShell(requestedHospitalId);
       return;
     }
 
-    const [hospital, doctors] = await Promise.all([
-      fetchHospital(hospitalId),
-      fetchHospitalDoctors(hospitalId),
-    ]);
+    const hospital = await fetchHospital(requestedHospitalId);
+    state.hospitalId = hospital.id;
+    const doctors = await fetchHospitalDoctors(hospital.id);
 
     state.hospital = hospital;
     state.doctors = doctors;
-    renderHospital(hospitalId, hospital);
+    renderHospital(hospital);
     renderDoctors(doctors);
   } catch (error) {
     showError(error);
-    renderHospitalShell(hospitalId);
+    renderHospitalShell(requestedHospitalId);
   }
 }
 
 async function fetchHospital(hospitalId) {
-  const snap = await getDoc(doc(state.db, "hospitals", hospitalId));
-  if (!snap.exists()) throw new Error("Hospital code was not found.");
-  return { id: snap.id, ...snap.data() };
+  const cleanHospitalId = cleanId(hospitalId);
+  const snap = await getDoc(doc(state.db, "hospitals", cleanHospitalId));
+  if (snap.exists()) return normalizeHospital(snap.id, snap.data());
+
+  const mapSnap = await getDoc(doc(state.db, "map", cleanHospitalId)).catch(() => null);
+  const mappedHospitalId = mapSnap?.exists()
+    ? cleanId(mapSnap.data().uuid || mapSnap.data().hospitalId || mapSnap.data().practiceId || "")
+    : "";
+  if (mappedHospitalId && mappedHospitalId !== cleanHospitalId) {
+    const mappedSnap = await getDoc(doc(state.db, "hospitals", mappedHospitalId));
+    if (mappedSnap.exists()) return normalizeHospital(mappedSnap.id, mappedSnap.data());
+  }
+
+  throw new Error("Hospital code was not found.");
+}
+
+function normalizeHospital(hospitalId, data) {
+  const adminProfile = data.adminProfile || {};
+  const address = firstText(
+    adminProfile.clinicAddress,
+    adminProfile.address,
+    data.clinicAddress,
+    data.address,
+  );
+  return {
+    ...data,
+    id: hospitalId,
+    name: firstText(
+      adminProfile.clinicName,
+      data.clinicName,
+      data.name,
+      adminProfile.name,
+      "Hospital",
+    ),
+    address,
+    city: firstText(adminProfile.city, data.city),
+    state: firstText(adminProfile.state, data.state),
+    phone: firstText(adminProfile.phone, data.phone),
+    adminProfile: { ...adminProfile, address },
+  };
+}
+
+function firstText(...values) {
+  return values.map((value) => sanitizeUserText(value, 180)).find(Boolean) || "";
 }
 
 async function fetchHospitalDoctors(hospitalId) {
@@ -1290,17 +1352,16 @@ function renderHospitalShell(hospitalId) {
   els.hospitalCard.classList.remove("skeleton");
   els.hospitalCard.innerHTML = `
     <p class="eyebrow">Hospital</p>
-    <h2>${escapeHtml(hospitalId)}</h2>
+    <h2>Hospital booking</h2>
     <p>Sign in to load this provider.</p>
   `;
 }
 
-function renderHospital(hospitalId, hospital) {
-  const adminProfile = hospital.adminProfile || {};
-  const name = adminProfile.clinicName || hospital.name || hospital.clinicName || hospitalId;
-  const address = adminProfile.address || hospital.address || hospital.clinicAddress || "";
-  const city = hospital.city || adminProfile.city || "";
-  const phone = hospital.phone || adminProfile.phone || "";
+function renderHospital(hospital) {
+  const name = hospital.name || "Hospital";
+  const address = hospital.address || "";
+  const city = hospital.city || "";
+  const phone = hospital.phone || "";
   els.hospitalCard.classList.remove("skeleton");
   els.hospitalCard.innerHTML = `
     <p class="eyebrow">Hospital</p>

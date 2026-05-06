@@ -117,10 +117,16 @@ button {
 }
 
 .link-choice-card img {
-  width: 84px;
-  height: 84px;
+  width: 132px;
+  height: 154px;
   object-fit: contain;
   margin-bottom: 12px;
+}
+
+.link-choice-card .link-choice-logo {
+  width: min(170px, 62vw);
+  height: auto;
+  max-height: 196px;
 }
 
 .link-choice-card h1 {
@@ -198,8 +204,8 @@ input {
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
   overflow: hidden;
 }
 
