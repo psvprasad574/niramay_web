@@ -405,7 +405,7 @@ main {
 
 .search-result-card {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   border: 1px solid var(--line);
@@ -428,6 +428,29 @@ main {
 .search-result-card p {
   margin: 4px 0 0;
   font-size: 0.92rem;
+}
+
+.hospital-thumb,
+.hospital-photo {
+  width: 100%;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+
+.hospital-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+}
+
+.hospital-thumb-empty {
+  border: 1px solid var(--line);
+}
+
+.hospital-photo {
+  height: 150px;
+  border-radius: 8px;
+  margin-bottom: 14px;
 }
 
 .provider-layout {
@@ -731,6 +754,20 @@ dialog::backdrop {
   .hero,
   .provider-layout {
     grid-template-columns: 1fr;
+  }
+
+  .search-result-card {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .search-result-card button {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .hospital-thumb {
+    width: 52px;
+    height: 52px;
   }
 
   .hero {

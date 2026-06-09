@@ -349,6 +349,14 @@ main {
   letter-spacing: 0.03em;
 }
 
+.slot-tile .slot-detail {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .slot-tile.available { border-left: 3px solid var(--success); }
 .slot-tile.available .slot-status { color: var(--success); }
 

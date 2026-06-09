@@ -5,9 +5,12 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app-check.js";
 import {
   GoogleAuthProvider,
+  browserLocalPersistence,
   getAuth,
+  getRedirectResult,
   onAuthStateChanged,
-  signInWithCredential,
+  setPersistence,
+  signInWithRedirect,
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
@@ -26,16 +29,32 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 
 const REGION = "asia-south1";
-const PROFILE_KEY = "niramay.patient.profile.v1";
-const RECEIPTS_KEY = "niramay.patient.receipts.v1";
 const PRIVATE_DB_NAME = "niramay_patient_private";
 const PRIVATE_STORE_NAME = "private_records";
 const DRIVE_RECEIPTS_FILE = "niramay_bookings.json";
+const ENCRYPTED_RECORD_PREFIX = "niramay-web-v2:";
+const LEGACY_ENCRYPTED_RECORD_PREFIX = "niramay-web-v1:";
+const ENCRYPTION_SALT_PREFIX = "NiramayPatientWeb2026";
 const GOOGLE_DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 const GOOGLE_OAUTH_CLIENT_ID = "76866563498-ks6v02eb5abro9in7imkc0f5q8kfe29j.apps.googleusercontent.com";
+const FIREBASE_AUTH_DOMAIN = "vana-apps.web.app";
 const PUBLIC_CONFIG = window.NIRAMAY_PUBLIC_CONFIG || {};
+const URL_PARAMS = new URLSearchParams(location.search);
 const FIREBASE_APP_CHECK_SITE_KEY = PUBLIC_CONFIG.appCheckSiteKey || "";
 const ADS_CONFIG = PUBLIC_CONFIG.ads || {};
+const MARKET_COUNTRY = normalizeMarket(URL_PARAMS.get("market") || PUBLIC_CONFIG.marketCountry);
+const IS_US_MARKET = MARKET_COUNTRY === "US";
+const PROFILE_KEY = `niramay.patient.${MARKET_COUNTRY.toLowerCase()}.profile.v1`;
+const RECEIPTS_KEY = `niramay.patient.${MARKET_COUNTRY.toLowerCase()}.receipts.v1`;
+const MAX_PHONE_LENGTH = 25;
+const US_STATES = [
+  "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+  "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+  "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+  "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+  "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+  "DC",
+];
 const PATIENT_APP_INSTALL_URL =
   PUBLIC_CONFIG.patientAppInstallUrl ||
   "https://play.google.com/store/apps/details?id=com.vana.health.patient.instant";
@@ -43,7 +62,6 @@ const APP_CHECK_CONFIG_ERROR =
   "Patient web App Check is not configured. Add the Firebase App Check reCAPTCHA v3 site key before calling Cloud Functions.";
 const GOOGLE_SIGN_IN_STATE_KEY = "niramay.googleSignInState";
 const GOOGLE_SIGN_IN_RETURN_KEY = "niramay.googleSignInReturnUrl";
-const GOOGLE_ACCESS_GRANTED_KEY = "niramay.googleAccessGranted.v1";
 const AUTH_DEBUG = new URLSearchParams(location.search).has("debugAuth");
 const FIREBASE_CONFIG_URL = "/__/firebase/init.json";
 
@@ -101,6 +119,8 @@ const els = {
   bookingConfirmTime: document.querySelector("#bookingConfirmTime"),
   bookingPatientName: document.querySelector("#bookingPatientName"),
   bookingPatientPhone: document.querySelector("#bookingPatientPhone"),
+  bookingPatientStateField: document.querySelector("#bookingPatientStateField"),
+  bookingPatientState: document.querySelector("#bookingPatientState"),
   cancelBookingConfirmBtn: document.querySelector("#cancelBookingConfirmBtn"),
   confirmBookingBtn: document.querySelector("#confirmBookingBtn"),
   backToBookingBtn: document.querySelector("#backToBookingBtn"),
@@ -127,6 +147,7 @@ const state = {
   cityContext: null,
   patientGoogleAccessToken: "",
   patientGoogleAccessTokenExpiresAt: 0,
+  patientGoogleAccessGranted: false,
   driveReceiptsFileId: "",
   citySuggestTimer: null,
   providerSuggestTimer: null,
@@ -134,6 +155,7 @@ const state = {
   receiptCache: [],
   pendingBooking: null,
   waitingForWebChoice: false,
+  patientState: "",
 };
 
 main().catch((error) => showError(error));
@@ -161,31 +183,54 @@ async function callPatientFunction(name, data = {}) {
     throw new Error(APP_CHECK_CONFIG_ERROR);
   }
   await user.getIdToken(true);
-  return httpsCallable(state.functions, name)(data);
+  return httpsCallable(state.functions, name)({ market: MARKET_COUNTRY, ...data });
+}
+
+function normalizeMarket(value) {
+  const market = String(value || "IN").trim().toUpperCase();
+  return market === "US" ? "US" : "IN";
+}
+
+function collectionName(baseName) {
+  return IS_US_MARKET ? `us_${baseName}` : baseName;
+}
+
+function collectionRef(baseName, ...segments) {
+  return collection(state.db, collectionName(baseName), ...segments);
+}
+
+function docRef(baseName, ...segments) {
+  return doc(state.db, collectionName(baseName), ...segments);
 }
 
 async function loadFirebaseConfig() {
-  if (PUBLIC_CONFIG.firebaseConfig) {
-    return PUBLIC_CONFIG.firebaseConfig;
-  }
+  if (PUBLIC_CONFIG.firebaseConfig) return normalizeFirebaseConfig(PUBLIC_CONFIG.firebaseConfig);
   const response = await fetch(FIREBASE_CONFIG_URL, { credentials: "same-origin" });
   if (!response.ok) {
     throw new Error(
       "Firebase config is unavailable. Deploy on Firebase Hosting or set window.NIRAMAY_PUBLIC_CONFIG.firebaseConfig for local development.",
     );
   }
-  return response.json();
+  return normalizeFirebaseConfig(await response.json());
+}
+
+function normalizeFirebaseConfig(config) {
+  const normalized = { ...config };
+  normalized.authDomain = FIREBASE_AUTH_DOMAIN;
+  return normalized;
 }
 
 async function main() {
   state.app = initializeApp(await loadFirebaseConfig());
   initializePatientAppCheck();
-  initializeBannerAds();
+  initializeMarketUi();
   state.auth = getAuth(state.app);
   state.db = getFirestore(state.app);
   state.functions = getFunctions(state.app, REGION);
-  await handleGoogleIdTokenRedirect();
-  await hydratePrivateCaches();
+  await setPersistence(state.auth, browserLocalPersistence);
+  await getRedirectResult(state.auth).catch((error) => {
+    showAuthError(error);
+  });
 
   bindEvents();
   hydrateInitialRoute();
@@ -195,9 +240,11 @@ async function main() {
 
   onAuthStateChanged(state.auth, async (user) => {
     state.user = user;
+    updateAdVisibilityForAuthState();
     renderAuth();
     if (user) {
       try {
+        await hydratePrivateCaches();
         await hydratePatientProfileFromAuth(user);
         renderProfile();
         await ensurePatientId();
@@ -206,6 +253,8 @@ async function main() {
         showError(error);
       }
     } else {
+      state.patientProfile = null;
+      state.receiptCache = [];
       renderProfile();
     }
     if (state.hospitalId && !state.waitingForWebChoice) {
@@ -218,7 +267,28 @@ async function main() {
   }
 }
 
+function updateAdVisibilityForAuthState() {
+  if (state.user) {
+    hideBannerAds();
+    return;
+  }
+  initializeBannerAds();
+}
+
+function initializeMarketUi() {
+  if (els.patientPhone) els.patientPhone.maxLength = MAX_PHONE_LENGTH;
+  if (els.bookingPatientPhone) els.bookingPatientPhone.maxLength = MAX_PHONE_LENGTH;
+  if (!els.bookingPatientState) return;
+  els.bookingPatientState.innerHTML = `<option value="">Select state</option>${US_STATES
+    .map((stateCode) => `<option value="${stateCode}">${stateCode}</option>`)
+    .join("")}`;
+  els.bookingPatientState.addEventListener("change", () => {
+    state.patientState = normalizePatientState(els.bookingPatientState.value);
+  });
+}
+
 function initializeBannerAds() {
+  if (state.user) return;
   const client = ADS_CONFIG.client || "";
   if (!client) return;
 
@@ -246,6 +316,16 @@ function initializeBannerAds() {
   }
 }
 
+function hideBannerAds() {
+  for (const element of [els.desktopLeftAd, els.desktopRightAd, els.mobileBottomAd]) {
+    if (element) {
+      element.hidden = true;
+      element.innerHTML = "";
+    }
+  }
+  document.body.classList.remove("has-mobile-ad");
+}
+
 function loadGoogleAdsScript(client) {
   if (document.querySelector("script[data-google-adsense]")) return;
   const script = document.createElement("script");
@@ -270,24 +350,116 @@ async function hydratePrivateCaches() {
     readPrivateRecord(PROFILE_KEY),
     readPrivateRecord(RECEIPTS_KEY),
   ]);
-  state.patientProfile = profile || readLegacyLocalJson(PROFILE_KEY);
-  state.receiptCache = Array.isArray(receipts)
-    ? receipts
-    : (Array.isArray(readLegacyLocalJson(RECEIPTS_KEY)) ? readLegacyLocalJson(RECEIPTS_KEY) : []);
-  await Promise.all([
-    state.patientProfile ? writePrivateRecord(PROFILE_KEY, state.patientProfile) : Promise.resolve(),
-    state.receiptCache.length ? writePrivateRecord(RECEIPTS_KEY, state.receiptCache) : Promise.resolve(),
-  ]);
-  localStorage.removeItem(PROFILE_KEY);
-  localStorage.removeItem(RECEIPTS_KEY);
+  state.patientProfile = profile || null;
+  state.receiptCache = Array.isArray(receipts) ? receipts : [];
 }
 
-function readLegacyLocalJson(key) {
-  try {
-    return JSON.parse(localStorage.getItem(key) || "null");
-  } catch (_) {
-    return null;
+function currentUserIdForPrivateData() {
+  const uid = state.auth?.currentUser?.uid || state.user?.uid || "";
+  if (!uid) throw new Error("Sign in before accessing private records.");
+  return uid;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function legacyPrivateCryptoKey() {
+  const uid = currentUserIdForPrivateData();
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(uid),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: new TextEncoder().encode(`${ENCRYPTION_SALT_PREFIX}:${MARKET_COUNTRY}`),
+      iterations: 100000,
+      hash: "SHA-256",
+    },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+}
+
+async function getStoredPrivateCryptoKey(uid) {
+  const db = await openPrivateDb();
+  return new Promise((resolve) => {
+    const tx = db.transaction(PRIVATE_STORE_NAME, "readonly");
+    const request = tx.objectStore(PRIVATE_STORE_NAME).get(`crypto:${uid}:${MARKET_COUNTRY}:v2`);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => resolve(null);
+    tx.oncomplete = () => db.close();
+    tx.onerror = () => db.close();
+  });
+}
+
+async function storePrivateCryptoKey(uid, key) {
+  const db = await openPrivateDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(PRIVATE_STORE_NAME, "readwrite");
+    tx.objectStore(PRIVATE_STORE_NAME).put(key, `crypto:${uid}:${MARKET_COUNTRY}:v2`);
+    tx.oncomplete = () => {
+      db.close();
+      resolve();
+    };
+    tx.onerror = () => {
+      db.close();
+      reject(tx.error || new Error("Private key storage failed."));
+    };
+  });
+}
+
+async function privateCryptoKey() {
+  const uid = currentUserIdForPrivateData();
+  const stored = await getStoredPrivateCryptoKey(uid);
+  if (stored) return stored;
+  const key = await crypto.subtle.generateKey(
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
+  );
+  await storePrivateCryptoKey(uid, key);
+  return key;
+}
+
+async function encryptPrivateJson(value) {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await privateCryptoKey();
+  const plain = new TextEncoder().encode(JSON.stringify(value));
+  const cipher = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plain));
+  return `${ENCRYPTED_RECORD_PREFIX}${bytesToBase64(iv)}:${bytesToBase64(cipher)}`;
+}
+
+async function decryptPrivateJson(value) {
+  if (typeof value !== "string") {
+    throw new Error("Private payload is not encrypted.");
   }
+  const isCurrent = value.startsWith(ENCRYPTED_RECORD_PREFIX);
+  const prefix = isCurrent ? ENCRYPTED_RECORD_PREFIX : LEGACY_ENCRYPTED_RECORD_PREFIX;
+  if (!value.startsWith(prefix)) throw new Error("Private payload is not encrypted.");
+  const payload = value.substring(prefix.length);
+  const separator = payload.indexOf(":");
+  if (separator <= 0) throw new Error("Invalid encrypted private payload.");
+  const iv = base64ToBytes(payload.substring(0, separator));
+  const cipher = base64ToBytes(payload.substring(separator + 1));
+  const key = isCurrent ? await privateCryptoKey() : await legacyPrivateCryptoKey();
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, cipher);
+  return JSON.parse(new TextDecoder().decode(plain));
 }
 
 function openPrivateDb() {
@@ -306,7 +478,13 @@ async function readPrivateRecord(key) {
   return new Promise((resolve) => {
     const tx = db.transaction(PRIVATE_STORE_NAME, "readonly");
     const request = tx.objectStore(PRIVATE_STORE_NAME).get(key);
-    request.onsuccess = () => resolve(request.result || null);
+    request.onsuccess = async () => {
+      try {
+        resolve(request.result ? await decryptPrivateJson(request.result) : null);
+      } catch (_) {
+        resolve(null);
+      }
+    };
     request.onerror = () => resolve(null);
     tx.oncomplete = () => db.close();
     tx.onerror = () => db.close();
@@ -314,10 +492,11 @@ async function readPrivateRecord(key) {
 }
 
 async function writePrivateRecord(key, value) {
+  const encrypted = await encryptPrivateJson(value);
   const db = await openPrivateDb();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(PRIVATE_STORE_NAME, "readwrite");
-    tx.objectStore(PRIVATE_STORE_NAME).put(value, key);
+    tx.objectStore(PRIVATE_STORE_NAME).put(encrypted, key);
     tx.oncomplete = () => {
       db.close();
       resolve();
@@ -337,16 +516,13 @@ function bindEvents() {
   on(els.signInBtn, "click", async () => {
     clearStatus();
     els.signInBtn.disabled = true;
+    els.signInBtn.textContent = "Opening sign in...";
     try {
-      startGoogleIdTokenSignIn();
+      await startGoogleRedirectSignIn();
     } catch (error) {
       showAuthError(error);
       els.signInBtn.disabled = false;
-      return;
-    } finally {
-      if (location.origin !== "https://accounts.google.com") {
-        els.signInBtn.disabled = false;
-      }
+      els.signInBtn.textContent = "Sign in";
     }
   });
 
@@ -364,8 +540,8 @@ function bindEvents() {
   on(els.signOutBtn, "click", () => {
     state.patientGoogleAccessToken = "";
     state.patientGoogleAccessTokenExpiresAt = 0;
+    state.patientGoogleAccessGranted = false;
     state.driveReceiptsFileId = "";
-    localStorage.removeItem(GOOGLE_ACCESS_GRANTED_KEY);
     signOut(state.auth);
   });
 
@@ -475,58 +651,12 @@ function bindEvents() {
 
 }
 
-async function handleGoogleIdTokenRedirect() {
-  if (!location.hash || !location.hash.includes("id_token=")) {
-    if (AUTH_DEBUG) showStatus("No Google ID token redirect was found.");
-    return;
-  }
-  const params = new URLSearchParams(location.hash.slice(1));
-  const error = params.get("error");
-  if (error) {
-    const authError = new Error(params.get("error_description") || error);
-    authError.code = `google/${error}`;
-    throw authError;
-  }
-
-  const returnedState = params.get("state") || "";
-  const expectedState = sessionStorage.getItem(GOOGLE_SIGN_IN_STATE_KEY) || "";
-  if (!returnedState || returnedState !== expectedState) {
-    throw new Error("Google sign-in state did not match. Please try again.");
-  }
-
-  const idToken = params.get("id_token") || "";
-  if (!idToken) throw new Error("Google sign-in did not return an ID token.");
-
-  const credential = GoogleAuthProvider.credential(idToken);
-  const result = await signInWithCredential(state.auth, credential);
-  sessionStorage.removeItem(GOOGLE_SIGN_IN_STATE_KEY);
-  const returnUrl = sessionStorage.getItem(GOOGLE_SIGN_IN_RETURN_KEY) || "/";
-  sessionStorage.removeItem(GOOGLE_SIGN_IN_RETURN_KEY);
-
-  const cleanUrl = new URL(returnUrl, location.origin);
-  if (cleanUrl.origin !== location.origin) cleanUrl.href = `${location.origin}/`;
-  cleanUrl.hash = "";
-  history.replaceState({}, "", `${cleanUrl.pathname}${cleanUrl.search}`);
-  if (AUTH_DEBUG) {
-    showStatus(`Google sign-in completed for ${result.user.email || result.user.uid}.`);
-  }
-}
-
-function startGoogleIdTokenSignIn() {
-  const redirectUri = `${location.origin}/`;
-  const stateToken = randomToken();
-  sessionStorage.setItem(GOOGLE_SIGN_IN_STATE_KEY, stateToken);
-  sessionStorage.setItem(GOOGLE_SIGN_IN_RETURN_KEY, location.href.split("#")[0]);
-  const params = new URLSearchParams({
-    client_id: GOOGLE_OAUTH_CLIENT_ID,
-    redirect_uri: redirectUri,
-    response_type: "id_token",
-    scope: "openid email profile",
-    nonce: randomToken(),
-    state: stateToken,
-    prompt: "select_account consent",
-  });
-  location.assign(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+function startGoogleRedirectSignIn() {
+  const provider = new GoogleAuthProvider();
+  provider.addScope("email");
+  provider.addScope("profile");
+  provider.setCustomParameters({ prompt: "select_account" });
+  return signInWithRedirect(state.auth, provider);
 }
 
 function randomToken() {
@@ -607,6 +737,8 @@ function renderAuth() {
       ? `Sign out, ${state.user.displayName.split(" ")[0]}`
       : "Sign out";
   } else {
+    els.signInBtn.disabled = false;
+    els.signInBtn.textContent = "Sign in";
     els.searchResults.innerHTML = "";
     updateCityLabels("Choose city");
   }
@@ -693,7 +825,7 @@ async function ensurePatientGoogleAccessToken() {
 }
 
 function hasGrantedGoogleAccess() {
-  return localStorage.getItem(GOOGLE_ACCESS_GRANTED_KEY) === state.user?.uid;
+  return Boolean(state.user && state.patientGoogleAccessGranted);
 }
 
 function requestPatientGoogleAccessToken({ prompt }) {
@@ -715,7 +847,7 @@ function requestPatientGoogleAccessToken({ prompt }) {
         state.patientGoogleAccessToken = token;
         const expiresInSeconds = Number(response.expires_in || 3600);
         state.patientGoogleAccessTokenExpiresAt = Date.now() + expiresInSeconds * 1000;
-        localStorage.setItem(GOOGLE_ACCESS_GRANTED_KEY, state.user.uid);
+        state.patientGoogleAccessGranted = true;
         resolve(token);
       },
     });
@@ -905,7 +1037,7 @@ function renderCitySuggestions(cities) {
 
 async function searchDoctors(searchText) {
   if (!state.cityContext) {
-    const snap = await getDocs(query(collection(state.db, "doctors"), limit(100)));
+    const snap = await getDocs(query(collectionRef("doctors"), limit(100)));
     return snap.docs
       .map((item) => normalizeSearchDoctor(item.id, item.data()))
       .filter((doctor) => doctor.isAvailable)
@@ -921,7 +1053,7 @@ async function searchDoctors(searchText) {
     const [start, end] = geohashRange(geohash4);
     const snap = await getDocs(
       query(
-        collection(state.db, "doctors"),
+        collectionRef("doctors"),
         where("geohash4", ">=", start),
         where("geohash4", "<", end),
         limit(80),
@@ -935,7 +1067,7 @@ async function searchDoctors(searchText) {
       doctors = await searchDoctorsByCity(state.cityContext.city, searchText);
     }
     if (!doctors.length) {
-      const fallbackSnap = await getDocs(query(collection(state.db, "doctors"), limit(100)));
+      const fallbackSnap = await getDocs(query(collectionRef("doctors"), limit(100)));
       doctors = fallbackSnap.docs
         .map((item) => normalizeSearchDoctor(item.id, item.data()))
         .filter((doctor) => doctor.isAvailable)
@@ -950,21 +1082,21 @@ async function searchDoctors(searchText) {
 async function searchDoctorsByCity(city, searchText) {
   const citySearchSnap = await getDocs(
     query(
-      collection(state.db, "doctors"),
+      collectionRef("doctors"),
       where("citySearch", "==", city),
       limit(80),
     ),
   ).catch(() => ({ docs: [] }));
   const citySnap = await getDocs(
     query(
-      collection(state.db, "doctors"),
+      collectionRef("doctors"),
       where("city", "==", city),
       limit(80),
     ),
   ).catch(() => ({ docs: [] }));
   const byId = new Map([...citySearchSnap.docs, ...citySnap.docs].map((item) => [item.id, item]));
   if (!byId.size) {
-    const fallbackSnap = await getDocs(query(collection(state.db, "doctors"), limit(100)));
+    const fallbackSnap = await getDocs(query(collectionRef("doctors"), limit(100)));
     for (const item of fallbackSnap.docs) {
       const doctor = normalizeSearchDoctor(item.id, item.data());
       if (normalizeSearchText(doctor.city) === city) {
@@ -1023,14 +1155,15 @@ async function buildSearchResults(doctors, searchText) {
     const hospitals = await searchHospitalsByName(searchText);
     for (const hospital of hospitals) {
       const existing = byHospital.get(hospital.hospitalId);
-      byHospital.set(hospital.hospitalId, {
-        hospitalId: hospital.hospitalId,
-        hospitalName: hospital.name,
-        address: hospital.address,
-        city: hospital.city,
-        doctors: existing?.doctors || [],
-      });
-    }
+    byHospital.set(hospital.hospitalId, {
+      hospitalId: hospital.hospitalId,
+      hospitalName: hospital.name,
+      address: hospital.address,
+      city: hospital.city,
+      photoUrl: hospital.photoUrl,
+      doctors: existing?.doctors || [],
+    });
+  }
   }
 
   const summaries = await fetchHospitalSummaries([...byHospital.keys()]);
@@ -1040,6 +1173,7 @@ async function buildSearchResults(doctors, searchText) {
     result.hospitalName = summary.name || result.hospitalName || "Hospital";
     result.address = result.address || summary.address || "";
     result.city = result.city || summary.city || "";
+    result.photoUrl = result.photoUrl || summary.photoUrl || "";
   }
 
   return [...byHospital.values()].sort((a, b) =>
@@ -1060,7 +1194,7 @@ async function fetchHospitalSummaries(hospitalIds) {
 }
 
 async function searchHospitalsByName(searchText) {
-  const hospitalsRef = collection(state.db, "hospitals");
+  const hospitalsRef = collectionRef("hospitals");
   const snap = state.cityContext?.type === "city"
     ? await getDocs(
       query(
@@ -1079,6 +1213,7 @@ async function searchHospitalsByName(searchText) {
         name: firstText(adminProfile.clinicName, data.clinicName, data.name, "Hospital"),
         address: firstText(adminProfile.clinicAddress, adminProfile.address, data.clinicAddress, data.address),
         city: firstText(adminProfile.city, data.city),
+        photoUrl: hospitalImageUrl(data),
       };
     })
     .filter((hospital) => includesSearch(hospital.name, searchText));
@@ -1091,6 +1226,9 @@ function renderSearchResults(results) {
   }
   els.searchResults.innerHTML = results.map((result) => `
     <article class="search-result-card" data-hospital-id="${escapeAttr(result.hospitalId)}">
+      ${result.photoUrl
+        ? `<img class="hospital-thumb" src="${escapeAttr(result.photoUrl)}" alt="">`
+        : `<div class="hospital-thumb hospital-thumb-empty" aria-hidden="true"></div>`}
       <div>
         <p class="eyebrow">Hospital</p>
         <h3>${escapeHtml(result.hospitalName)}</h3>
@@ -1121,7 +1259,10 @@ function normalizeSearchDoctor(docId, data) {
     clinicName: data.clinicName || "",
     clinicAddress: data.clinicAddress || "",
     city: data.city || "",
-    photoUrl: data.photoUrl || "",
+    photoUrl: doctorImageUrl(data),
+    hospitalIconUrl: firstText(data.hospitalIconUrl),
+    hospitalPhotoUrls: firstStringArray(data.hospitalPhotoUrls),
+    credential: data.credential || null,
     isAvailable: data.isAvailable !== false,
   };
 }
@@ -1153,17 +1294,33 @@ function sanitizeUserText(value, maxLength = 500) {
 
 function validatePatientPrivateProfile(nameValue, phoneValue) {
   const name = sanitizeUserText(nameValue, 100);
-  const phone = sanitizeUserText(phoneValue, 20);
+  const phone = sanitizeUserText(phoneValue, MAX_PHONE_LENGTH);
   if (!name) throw new Error("Patient name is required.");
   if (!/^[A-Za-z][A-Za-z .'-]{1,98}$/.test(name)) {
     throw new Error("Enter a valid patient name.");
   }
   if (!phone) throw new Error("Patient phone is required.");
-  const cleanedPhone = phone.replace(/[\s\-.()]/g, "");
-  if (!/^(\+91|0)?[6-9]\d{9}$/.test(cleanedPhone)) {
-    throw new Error("Enter a valid patient phone number.");
+  const cleanedPhone = phone.replace(/[\s\-\u2010-\u2015\u2212.()]/g, "");
+  if (!/^\+[1-9]\d{7,14}$/.test(cleanedPhone)) {
+    throw new Error("Enter a valid international phone number, including country code.");
   }
   return { name, phone };
+}
+
+function normalizePatientState(value) {
+  return String(value || "").trim().toUpperCase();
+}
+
+function isUsVerifiedDoctor(doctor) {
+  const credential = doctor?.credential || {};
+  return credential.country === "US" && credential.status === "verified";
+}
+
+function allowedPatientStates(doctor) {
+  const states = doctor?.credential?.allowedPatientStates;
+  return Array.isArray(states)
+    ? states.map((item) => String(item).trim().toUpperCase()).filter(Boolean)
+    : [];
 }
 
 function prefixRange(value) {
@@ -1243,9 +1400,10 @@ async function loadHospitalContext(hospitalId) {
       return;
     }
 
-    const hospital = await fetchHospital(requestedHospitalId);
+    const context = await fetchPatientHospitalContext(requestedHospitalId);
+    const hospital = context.hospital;
     state.hospitalId = hospital.id;
-    const doctors = await fetchHospitalDoctors(hospital.id);
+    const doctors = context.doctors;
 
     state.hospital = hospital;
     state.doctors = doctors;
@@ -1257,21 +1415,18 @@ async function loadHospitalContext(hospitalId) {
   }
 }
 
-async function fetchHospital(hospitalId) {
-  const cleanHospitalId = cleanId(hospitalId);
-  const snap = await getDoc(doc(state.db, "hospitals", cleanHospitalId));
-  if (snap.exists()) return normalizeHospital(snap.id, snap.data());
-
-  const mapSnap = await getDoc(doc(state.db, "map", cleanHospitalId)).catch(() => null);
-  const mappedHospitalId = mapSnap?.exists()
-    ? cleanId(mapSnap.data().uuid || mapSnap.data().hospitalId || mapSnap.data().practiceId || "")
-    : "";
-  if (mappedHospitalId && mappedHospitalId !== cleanHospitalId) {
-    const mappedSnap = await getDoc(doc(state.db, "hospitals", mappedHospitalId));
-    if (mappedSnap.exists()) return normalizeHospital(mappedSnap.id, mappedSnap.data());
-  }
-
-  throw new Error("Hospital code was not found.");
+async function fetchPatientHospitalContext(hospitalId) {
+  const result = await callPatientFunction("getPatientHospitalContext", {
+    hospitalId: cleanId(hospitalId),
+  });
+  const hospital = result.data?.hospital;
+  if (!hospital?.hospitalId) throw new Error("Hospital code was not found.");
+  return {
+    hospital: normalizeHospital(hospital.hospitalId, hospital),
+    doctors: Array.isArray(result.data?.doctors)
+      ? result.data.doctors.map((doctor) => normalizeDoctor(doctor.uid || doctor.docId, doctor))
+      : [],
+  };
 }
 
 function normalizeHospital(hospitalId, data) {
@@ -1296,6 +1451,8 @@ function normalizeHospital(hospitalId, data) {
     city: firstText(adminProfile.city, data.city),
     state: firstText(adminProfile.state, data.state),
     phone: firstText(adminProfile.phone, data.phone),
+    photoUrl: hospitalImageUrl(data),
+    hospitalPhotoUrls: hospitalImageUrls(data),
     adminProfile: { ...adminProfile, address },
   };
 }
@@ -1304,34 +1461,49 @@ function firstText(...values) {
   return values.map((value) => sanitizeUserText(value, 180)).find(Boolean) || "";
 }
 
-async function fetchHospitalDoctors(hospitalId) {
-  const membersRef = collection(state.db, "hospitals", hospitalId, "members");
-  const membersSnap = await getDocs(
-    query(
-      membersRef,
-      where("role", "==", "doctor"),
-      limit(50),
-    ),
-  );
-
-  const doctors = [];
-  for (const member of membersSnap.docs) {
-    const memberData = member.data();
-    const status = memberData.status || "active";
-    if (status !== "active" && status !== "pending_verification") continue;
-    const uid = member.data().uid || member.id;
-    const doctorSnap = await getDoc(doc(state.db, "doctors", uid));
-    if (!doctorSnap.exists()) continue;
-    const data = { ...doctorSnap.data(), ...emptyToFallback(memberData) };
-    if (data.isAvailable === false) continue;
-    doctors.push(normalizeDoctor(uid, data));
-  }
-  return doctors.sort((a, b) => a.name.localeCompare(b.name));
+function firstUrl(...values) {
+  return values.map((value) => sanitizeUserText(value, 2000)).find(Boolean) || "";
 }
 
-function emptyToFallback(data) {
-  return Object.fromEntries(
-    Object.entries(data).filter(([, value]) => value !== undefined && value !== null && value !== ""),
+function firstStringArray(...values) {
+  for (const value of values) {
+    if (!Array.isArray(value)) continue;
+    const urls = value
+      .map((url) => sanitizeUserText(url, 1000))
+      .filter(Boolean);
+    if (urls.length) return [...new Set(urls)];
+  }
+  return [];
+}
+
+function hospitalImageUrl(data) {
+  const adminProfile = data.adminProfile || {};
+  return firstUrl(
+    adminProfile.hospitalPhotoUrl,
+    data.hospitalPhotoUrl,
+    adminProfile.profilePhotoUrl,
+    adminProfile.adminPhotoUrl,
+    adminProfile.photoUrl,
+    data.hospitalIconUrl,
+    data.profilePhotoUrl,
+    data.photoUrl,
+    ...hospitalImageUrls(data),
+  );
+}
+
+function hospitalImageUrls(data) {
+  const adminProfile = data.adminProfile || {};
+  return firstStringArray(adminProfile.hospitalPhotoUrls, data.hospitalPhotoUrls);
+}
+
+function doctorImageUrl(data) {
+  return firstUrl(
+    data.photoUrl,
+    data.profilePhotoUrl,
+    data.doctorPhotoUrl,
+    data.memberPhotoUrl,
+    data.avatarUrl,
+    data.imageUrl,
   );
 }
 
@@ -1343,8 +1515,12 @@ function normalizeDoctor(uid, data) {
     clinicName: data.clinicName || "",
     clinicAddress: data.clinicAddress || "",
     city: data.city || "",
-    photoUrl: data.photoUrl || "",
+    photoUrl: doctorImageUrl(data),
+    hospitalIconUrl: firstText(data.hospitalIconUrl),
+    hospitalPhotoUrls: firstStringArray(data.hospitalPhotoUrls),
+    credential: data.credential || null,
     isVerified: data.isVerified !== false,
+    isAvailable: data.isAvailable !== false,
   };
 }
 
@@ -1362,8 +1538,10 @@ function renderHospital(hospital) {
   const address = hospital.address || "";
   const city = hospital.city || "";
   const phone = hospital.phone || "";
+  const photoUrl = hospital.photoUrl || "";
   els.hospitalCard.classList.remove("skeleton");
   els.hospitalCard.innerHTML = `
+    ${photoUrl ? `<img class="hospital-photo" src="${escapeAttr(photoUrl)}" alt="">` : ""}
     <p class="eyebrow">Hospital</p>
     <h2>${escapeHtml(name)}</h2>
     ${address ? `<p>${escapeHtml(address)}</p>` : ""}
@@ -1474,7 +1652,7 @@ async function loadSlots(doctor) {
       status: slot.status || "available",
       startLabel: formatTime(slot.startTime),
       endLabel: formatTime(slot.endTime),
-    }));
+    })).filter((slot) => isFutureSlot(slot));
     for (const slot of slots) state.selectedSlotsByStart.set(slot.slotId, slot);
     renderSlots(slots);
   } catch (error) {
@@ -1513,6 +1691,11 @@ function slotStatusLabel(status) {
   }
 }
 
+function isFutureSlot(slot) {
+  const start = new Date(slot?.startTime || "");
+  return Number.isFinite(start.getTime()) && start > new Date();
+}
+
 function openBookingDialog(slotId, button) {
   const profile = loadProfile();
   if (!profile?.name || !profile?.phone) {
@@ -1526,14 +1709,35 @@ function openBookingDialog(slotId, button) {
     showStatus("This slot is not available for booking.", true);
     return;
   }
+  if (!isFutureSlot(slot)) {
+    showStatus("This slot has already passed. Please choose a future slot.", true);
+    return;
+  }
+  if (IS_US_MARKET && !isUsVerifiedDoctor(state.selectedDoctor)) {
+    showStatus("Doctor license verification is pending.", true);
+    return;
+  }
 
   state.pendingBooking = { slotId, button };
+  const allowedStates = allowedPatientStates(state.selectedDoctor);
   els.bookingConfirmTitle.textContent = "Review your appointment";
   els.bookingConfirmDoctor.textContent = state.selectedDoctor.name || "Doctor";
   els.bookingConfirmDate.textContent = formatDate(els.dateInput.value);
   els.bookingConfirmTime.textContent = `${slot.startLabel} - ${slot.endLabel}`;
   els.bookingPatientName.value = profile.name || state.user?.displayName || "";
   els.bookingPatientPhone.value = profile.phone || state.user?.phoneNumber || "";
+  if (els.bookingPatientStateField && els.bookingPatientState) {
+    els.bookingPatientStateField.hidden = !IS_US_MARKET;
+    if (IS_US_MARKET) {
+      const options = allowedStates.length ? allowedStates : US_STATES;
+      els.bookingPatientState.innerHTML = `<option value="">Select state</option>${options
+        .map((stateCode) => `<option value="${escapeAttr(stateCode)}">${escapeHtml(stateCode)}</option>`)
+        .join("")}`;
+      els.bookingPatientState.value =
+        options.includes(state.patientState) ? state.patientState : options.length === 1 ? options[0] : "";
+      state.patientState = normalizePatientState(els.bookingPatientState.value);
+    }
+  }
   els.confirmBookingBtn.disabled = false;
   els.cancelBookingConfirmBtn.disabled = false;
   els.confirmBookingBtn.textContent = "Book slot";
@@ -1554,15 +1758,35 @@ async function confirmPendingBooking() {
       els.bookingPatientName.value,
       els.bookingPatientPhone.value,
     );
+    if (IS_US_MARKET && !normalizePatientState(els.bookingPatientState.value)) {
+      throw new Error("Select the patient state.");
+    }
+    if (IS_US_MARKET) state.patientState = normalizePatientState(els.bookingPatientState.value);
   } catch (error) {
     showStatus(error?.message || "Add valid patient name and phone before booking.", true);
     return;
   }
-  await saveProfile({
-    ...patient,
-    updatedAt: new Date().toISOString(),
-  });
-  renderProfile();
+  els.confirmBookingBtn.disabled = true;
+  els.cancelBookingConfirmBtn.disabled = true;
+  els.confirmBookingBtn.textContent = "Preparing...";
+  try {
+    await saveProfile({
+      ...patient,
+      updatedAt: new Date().toISOString(),
+    });
+    renderProfile();
+    await ensurePatientGoogleAccessToken();
+  } catch (error) {
+    showStatus(
+      error?.message ||
+        "Allow Google Drive access before booking so your receipt can be backed up.",
+      true,
+    );
+    els.confirmBookingBtn.disabled = false;
+    els.cancelBookingConfirmBtn.disabled = false;
+    els.confirmBookingBtn.textContent = "Book slot";
+    return;
+  }
   await bookSlot(pending.slotId, pending.button);
 }
 
@@ -1583,6 +1807,9 @@ async function bookSlot(slotId, button) {
       date: els.dateInput.value,
       slotId: slot.slotId,
       patientEmail: state.user.email,
+      patientName: profile.name || "",
+      patientPhone: profile.phone || "",
+      ...(IS_US_MARKET && state.patientState ? { patientState: state.patientState } : {}),
     });
     const appointment = result.data?.appointment || {};
     const receipt = {
@@ -1602,7 +1829,12 @@ async function bookSlot(slotId, button) {
       patientGoogleEventId: "",
       createdAt: new Date().toISOString(),
     };
-    await saveReceipt(receipt);
+    await saveReceipt(receipt, { syncDrive: false });
+    try {
+      await writeReceiptsToDrive(loadReceipts());
+    } catch (driveError) {
+      console.warn("Drive receipt backup failed after booking.", driveError);
+    }
     state.pendingBooking = null;
     els.bookingDialog.close();
     showStatus("Appointment booked. The provider calendar event includes your signed-in email as an attendee.");
@@ -1640,8 +1872,8 @@ async function showBookings() {
   }
 }
 
-async function saveReceipt(receipt) {
-  await mergeReceipts([receipt]);
+async function saveReceipt(receipt, options) {
+  await mergeReceipts([receipt], options);
 }
 
 async function mergeReceipts(receipts, { syncDrive = true } = {}) {
@@ -1657,7 +1889,14 @@ async function mergeReceipts(receipts, { syncDrive = true } = {}) {
   const merged = [...byId.values()].sort(compareReceipts).slice(0, 100);
   state.receiptCache = merged;
   await writePrivateRecord(RECEIPTS_KEY, merged);
-  if (syncDrive) await writeReceiptsToDrive(merged);
+  if (syncDrive) syncReceiptsToDriveIfAuthorized();
+}
+
+function syncReceiptsToDriveIfAuthorized() {
+  if (!hasGrantedGoogleAccess()) return;
+  writeReceiptsToDrive(loadReceipts()).catch((error) => {
+    console.warn("Background Drive receipt sync failed.", error);
+  });
 }
 
 function loadReceipts() {
@@ -1683,10 +1922,11 @@ async function mergeRemoteReceipts(remote) {
   const merged = [...byId.values()].sort(compareReceipts).slice(0, 100);
   state.receiptCache = merged;
   await writePrivateRecord(RECEIPTS_KEY, merged);
-  await writeReceiptsToDrive(merged);
+  syncReceiptsToDriveIfAuthorized();
 }
 
 async function loadDriveReceipts() {
+  if (!hasGrantedGoogleAccess()) return [];
   try {
     const token = await ensurePatientGoogleAccessToken();
     const fileId = await findDriveReceiptsFile(token);
@@ -1695,7 +1935,7 @@ async function loadDriveReceipts() {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!response.ok) throw new Error("Drive receipts could not be loaded.");
-    const payload = await response.json();
+    const payload = await decryptPrivateJson(await response.text());
     return Array.isArray(payload?.receipts) ? payload.receipts : [];
   } catch (error) {
     showStatus("Could not sync Google Drive receipts. Showing local bookings.", true);
@@ -1707,7 +1947,7 @@ async function writeReceiptsToDrive(receipts) {
   try {
     const token = await ensurePatientGoogleAccessToken();
     const fileId = await findDriveReceiptsFile(token);
-    const payload = JSON.stringify({
+    const payload = await encryptPrivateJson({
       version: 1,
       updatedAt: new Date().toISOString(),
       receipts: receipts.slice(0, 100),
@@ -1884,7 +2124,7 @@ function showAuthError(error) {
     rawMessage.toLowerCase().includes("redirect_uri_mismatch") ||
     rawMessage.toLowerCase().includes("redirect uri mismatch");
   const resolvedMessage = redirectMismatch
-    ? "Google sign-in redirect URI is not authorized. Add https://vana-apps.firebaseapp.com/ and https://vana-apps.web.app/ to the OAuth client's authorized redirect URIs."
+    ? "Google sign-in redirect URI is not authorized. Add https://vana-apps.web.app/ to the OAuth client's authorized redirect URIs."
     : messageByCode[code] || rawMessage || "Google sign-in failed.";
   const serverResponse = error?.customData?._tokenResponse?.error?.message
     || error?.customData?._tokenResponse?.error

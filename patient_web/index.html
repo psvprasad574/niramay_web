@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0f766e">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://accounts.google.com https://apis.google.com https://www.recaptcha.net https://pagead2.googlesyndication.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebaseappcheck.googleapis.com https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; frame-src https://accounts.google.com https://*.firebaseapp.com https://*.google.com https://apis.google.com https://www.recaptcha.net https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; object-src 'none'; base-uri 'self'; form-action 'self';"
+      content="default-src 'self'; script-src 'self' https://www.gstatic.com https://www.google.com https://accounts.google.com https://apis.google.com https://www.recaptcha.net https://pagead2.googlesyndication.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://www.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebaseappcheck.googleapis.com https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net; frame-src 'self' https://accounts.google.com https://www.google.com https://apis.google.com https://www.recaptcha.net https://googleads.g.doubleclick.net https://tpc.googlesyndication.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
     >
     <meta
       name="description"
@@ -14,7 +14,7 @@
     >
     <title>Niramay Patient Booking</title>
     <link rel="manifest" href="/manifest.webmanifest">
-    <link rel="stylesheet" href="/styles.css?v=20260506-patient-logo-hospital-1">
+    <link rel="stylesheet" href="/styles.css?v=20260606-hospital-images-1">
   </head>
   <body>
     <aside id="desktopLeftAd" class="ad-rail ad-rail-left" aria-label="Sponsored" hidden></aside>
@@ -169,7 +169,7 @@
         </label>
         <label>
           Phone
-          <input id="patientPhone" autocomplete="tel" inputmode="tel" required maxlength="20">
+          <input id="patientPhone" autocomplete="tel" inputmode="tel" required maxlength="25" placeholder="+1 415 555 2671">
         </label>
         <menu>
           <button id="cancelProfileBtn" value="cancel" class="ghost" type="button">
@@ -222,7 +222,11 @@
           </label>
           <label>
             Phone
-            <input id="bookingPatientPhone" autocomplete="tel" inputmode="tel" required maxlength="20">
+            <input id="bookingPatientPhone" autocomplete="tel" inputmode="tel" required maxlength="25" placeholder="+1 415 555 2671">
+          </label>
+          <label id="bookingPatientStateField" hidden>
+            Patient state
+            <select id="bookingPatientState"></select>
           </label>
         </div>
         <menu>
@@ -235,6 +239,6 @@
     </dialog>
 
     <script src="/config.js?v=20260426-app-check-1"></script>
-    <script type="module" src="/app.js?v=20260506-patient-logo-hospital-1"></script>
+    <script type="module" src="/app.js?v=20260606-webapp-authstate-1"></script>
   </body>
 </html>

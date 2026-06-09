@@ -6,8 +6,9 @@ import {
 import {
   GoogleAuthProvider,
   getAuth,
+  getRedirectResult,
   onAuthStateChanged,
-  signInWithCredential,
+  signInWithRedirect,
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
@@ -28,13 +29,14 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 const REGION = "asia-south1";
-const GOOGLE_OAUTH_CLIENT_ID = "76866563498-ks6v02eb5abro9in7imkc0f5q8kfe29j.apps.googleusercontent.com";
 const ADMIN_CONFIG = window.NIRAMAY_ADMIN_CONFIG || {};
+const URL_PARAMS = new URLSearchParams(location.search);
 const FIREBASE_APP_CHECK_SITE_KEY = ADMIN_CONFIG.appCheckSiteKey || "";
+const MARKET_COUNTRY = normalizeMarket(URL_PARAMS.get("market") || ADMIN_CONFIG.marketCountry);
+const IS_US_MARKET = MARKET_COUNTRY === "US";
+const MAX_PHONE_LENGTH = 25;
 const APP_CHECK_CONFIG_ERROR =
   "Admin web App Check is not configured. Add the Firebase App Check reCAPTCHA Enterprise site key before calling Cloud Functions.";
-const GOOGLE_SIGN_IN_STATE_KEY = "niramay.admin.signInState";
-const GOOGLE_SIGN_IN_RETURN_KEY = "niramay.admin.signInReturn";
 const PATIENT_WEB_BASE_URL = ADMIN_CONFIG.patientWebBaseUrl || "https://vana-apps.web.app";
 const FIREBASE_CONFIG_URL = "/__/firebase/init.json";
 
@@ -99,6 +101,10 @@ const els = {
   dpSpecialty: document.querySelector("#dpSpecialty"),
   dpPhone: document.querySelector("#dpPhone"),
   dpLicense: document.querySelector("#dpLicense"),
+  dpCredentialFields: document.querySelector("#dpCredentialFields"),
+  dpNpi: document.querySelector("#dpNpi"),
+  dpLicenseState: document.querySelector("#dpLicenseState"),
+  dpLicenseType: document.querySelector("#dpLicenseType"),
   dpYears: document.querySelector("#dpYears"),
   dpServices: document.querySelector("#dpServices"),
   dpAbout: document.querySelector("#dpAbout"),
@@ -151,11 +157,12 @@ main().catch(showError);
 async function main() {
   state.app = initializeApp(await loadFirebaseConfig());
   initializeAdminAppCheck();
+  initializeMarketUi();
   state.auth = getAuth(state.app);
   state.db = getFirestore(state.app);
   state.functions = getFunctions(state.app, REGION);
 
-  await handleGoogleIdTokenRedirect();
+  await getRedirectResult(state.auth).catch(showError);
   initDateInputs();
   bindEvents();
 
@@ -170,6 +177,32 @@ async function main() {
       }
     }
   });
+}
+
+function normalizeMarket(value) {
+  const market = String(value || "IN").trim().toUpperCase();
+  return market === "US" ? "US" : "IN";
+}
+
+function collectionName(baseName) {
+  return IS_US_MARKET ? `us_${baseName}` : baseName;
+}
+
+function collectionRef(baseName, ...segments) {
+  return collection(state.db, collectionName(baseName), ...segments);
+}
+
+function docRef(baseName, ...segments) {
+  return doc(state.db, collectionName(baseName), ...segments);
+}
+
+function initializeMarketUi() {
+  [els.apPhone, els.dpPhone].forEach((input) => {
+    if (input) input.maxLength = MAX_PHONE_LENGTH;
+  });
+  if (els.dpCredentialFields) {
+    els.dpCredentialFields.hidden = !IS_US_MARKET;
+  }
 }
 
 async function loadFirebaseConfig() {
@@ -201,54 +234,12 @@ function initializeAdminAppCheck() {
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
-function startGoogleIdTokenSignIn() {
-  const redirectUri = `${location.origin}/`;
-  const stateToken = randomToken();
-  sessionStorage.setItem(GOOGLE_SIGN_IN_STATE_KEY, stateToken);
-  sessionStorage.setItem(GOOGLE_SIGN_IN_RETURN_KEY, location.href.split("#")[0]);
-  const params = new URLSearchParams({
-    client_id: GOOGLE_OAUTH_CLIENT_ID,
-    redirect_uri: redirectUri,
-    response_type: "id_token",
-    scope: "openid email profile",
-    nonce: randomToken(),
-    state: stateToken,
-    prompt: "select_account consent",
-  });
-  location.assign(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
-}
-
-async function handleGoogleIdTokenRedirect() {
-  if (!location.hash || !location.hash.includes("id_token=")) return;
-  const params = new URLSearchParams(location.hash.slice(1));
-  const error = params.get("error");
-  if (error) throw new Error(params.get("error_description") || error);
-
-  const returnedState = params.get("state") || "";
-  const expectedState = sessionStorage.getItem(GOOGLE_SIGN_IN_STATE_KEY) || "";
-  if (!returnedState || returnedState !== expectedState) {
-    throw new Error("Google sign-in state did not match. Please try again.");
-  }
-
-  const idToken = params.get("id_token") || "";
-  if (!idToken) throw new Error("Google sign-in did not return an ID token.");
-
-  const credential = GoogleAuthProvider.credential(idToken);
-  await signInWithCredential(state.auth, credential);
-  sessionStorage.removeItem(GOOGLE_SIGN_IN_STATE_KEY);
-  const returnUrl = sessionStorage.getItem(GOOGLE_SIGN_IN_RETURN_KEY) || "/";
-  sessionStorage.removeItem(GOOGLE_SIGN_IN_RETURN_KEY);
-
-  const cleanUrl = new URL(returnUrl, location.origin);
-  if (cleanUrl.origin !== location.origin) cleanUrl.href = `${location.origin}/`;
-  cleanUrl.hash = "";
-  history.replaceState({}, "", `${cleanUrl.pathname}${cleanUrl.search}`);
-}
-
-function randomToken() {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+function startGoogleSignIn() {
+  const provider = new GoogleAuthProvider();
+  provider.addScope("email");
+  provider.addScope("profile");
+  provider.setCustomParameters({ prompt: "select_account" });
+  return signInWithRedirect(state.auth, provider);
 }
 
 // ---------------------------------------------------------------------------
@@ -261,7 +252,7 @@ async function detectHospital() {
     return;
   }
 
-  const mapSnap = await getDoc(doc(state.db, "map", email));
+  const mapSnap = await getDoc(docRef("map", email));
   if (!mapSnap.exists()) {
     showStatus("Your account is not linked to any hospital. Set up your hospital in the Niramay app first.", true);
     return;
@@ -274,7 +265,7 @@ async function detectHospital() {
     return;
   }
 
-  const hospitalSnap = await getDoc(doc(state.db, "hospitals", hospitalId));
+  const hospitalSnap = await getDoc(docRef("hospitals", hospitalId));
   if (!hospitalSnap.exists()) {
     showStatus(`Hospital ${hospitalId} not found in Firestore.`, true);
     return;
@@ -299,7 +290,7 @@ async function callFunction(name, data = {}) {
   if (!state.auth?.currentUser) throw new Error("Sign in first.");
   if (!FIREBASE_APP_CHECK_SITE_KEY) throw new Error(APP_CHECK_CONFIG_ERROR);
   await state.auth.currentUser.getIdToken(true);
-  return httpsCallable(state.functions, name)(data);
+  return httpsCallable(state.functions, name)({ market: MARKET_COUNTRY, ...data });
 }
 
 function sanitizeFormText(value, maxLength = 500) {
@@ -318,11 +309,11 @@ function validateRequiredText(value, label, maxLength = 100) {
 }
 
 function validateOptionalPhone(value) {
-  const phone = sanitizeFormText(value, 20);
+  const phone = sanitizeFormText(value, MAX_PHONE_LENGTH);
   if (!phone) return "";
-  const cleaned = phone.replace(/[\s\-.()]/g, "");
-  if (!/^(\+91|0)?[6-9]\d{9}$/.test(cleaned)) {
-    throw new Error("Enter a valid phone number.");
+  const cleaned = phone.replace(/[\s\-\u2010-\u2015\u2212.()]/g, "");
+  if (!/^\+[1-9]\d{7,14}$/.test(cleaned)) {
+    throw new Error("Enter a valid international phone number, including country code.");
   }
   return phone;
 }
@@ -354,6 +345,25 @@ function validateOptionalNumber(value, label, min, max) {
     throw new Error(`${label} must be between ${min} and ${max}.`);
   }
   return numberValue;
+}
+
+function validateDoctorCredential() {
+  if (!IS_US_MARKET) return null;
+  const npi = sanitizeFormText(els.dpNpi.value, 10);
+  const licenseState = sanitizeFormText(els.dpLicenseState.value, 2).toUpperCase();
+  const licenseType = sanitizeFormText(els.dpLicenseType.value, 20).toUpperCase();
+  const licenseNumber = sanitizeFormText(els.dpLicense.value, 50);
+  if (!/^\d{10}$/.test(npi)) throw new Error("Enter a valid 10-digit NPI.");
+  if (!/^[A-Z]{2}$/.test(licenseState)) throw new Error("Enter a valid 2-letter license state.");
+  if (!licenseType) throw new Error("License type is required for US doctors.");
+  if (!licenseNumber) throw new Error("License number is required for US doctors.");
+  return {
+    country: "US",
+    npi,
+    licenseState,
+    licenseType,
+    licenseNumber,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -516,6 +526,11 @@ function openDoctorProfileDialog(memberId) {
   els.dpSpecialty.value = member.specialty || "";
   els.dpPhone.value = member.phone || "";
   els.dpLicense.value = member.licenseNumber || "";
+  const credential = member.credential || {};
+  if (els.dpCredentialFields) els.dpCredentialFields.hidden = !IS_US_MARKET;
+  if (els.dpNpi) els.dpNpi.value = credential.npi || "";
+  if (els.dpLicenseState) els.dpLicenseState.value = credential.licenseState || "";
+  if (els.dpLicenseType) els.dpLicenseType.value = credential.licenseType || "";
   els.dpYears.value = member.yearsOfExperience ?? "";
   els.dpServices.value = member.services || "";
   els.dpAbout.value = member.aboutText || "";
@@ -544,6 +559,7 @@ async function saveDoctorProfile(event) {
       specialty: sanitizeFormText(els.dpSpecialty.value, 500),
       phone: validateOptionalPhone(els.dpPhone.value),
       licenseNumber: sanitizeFormText(els.dpLicense.value, 50),
+      ...(IS_US_MARKET ? { credential: validateDoctorCredential() } : {}),
       yearsOfExperience: validateOptionalNumber(els.dpYears.value, "Years of experience", 0, 80),
       services: sanitizeFormText(els.dpServices.value, 500),
       aboutText: sanitizeFormText(els.dpAbout.value, 2000),
@@ -569,7 +585,7 @@ async function saveDoctorProfile(event) {
 // Members
 // ---------------------------------------------------------------------------
 async function loadMembers() {
-  const membersRef = collection(state.db, "hospitals", state.hospitalId, "members");
+  const membersRef = collectionRef("hospitals", state.hospitalId, "members");
   const snap = await getDocs(query(membersRef, limit(100)));
   state.members = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   state.doctors = state.members.filter((m) => m.role === "doctor" && m.status !== "deleted");
@@ -697,6 +713,12 @@ function renderSlots(slotsMap) {
 
   els.slotGrid.innerHTML = entries.map((slot) => {
     const status = slot.status || "available";
+    const details = slot.details || {};
+    const patientName = sanitizeFormText(details.patientName || "", 100);
+    const patientPhone = sanitizeFormText(details.patientPhone || "", MAX_PHONE_LENGTH);
+    const detailLine = status === "busy"
+      ? [patientName, patientPhone].filter(Boolean).join(" - ")
+      : sanitizeFormText(details.title || "", 100);
     return `
       <button class="slot-tile ${esc(status)}" type="button"
         data-slot-id="${esc(slot.slotId)}"
@@ -704,6 +726,7 @@ function renderSlots(slotsMap) {
         <span class="slot-time">${esc(formatSlotTime(slot.start_time))}</span>
         <span class="slot-time" style="font-weight:400;font-size:0.8rem">${esc(formatSlotTime(slot.end_time))}</span>
         <span class="slot-status">${esc(status)}</span>
+        ${detailLine ? `<span class="slot-detail">${esc(detailLine)}</span>` : ""}
       </button>
     `;
   }).join("");
@@ -742,7 +765,14 @@ function openSlotAction(slotId, status) {
     actions.push({ label: "Block slot", cls: "btn ghost", fn: () => slotAction("adminBlockSlot", slotId) });
     actions.push({ label: "Book slot", cls: "btn", fn: () => slotAction("providerBookSlot", slotId) });
   } else if (status === "booked" || status === "busy") {
-    actions.push({ label: "Release slot", cls: "btn danger", fn: () => slotAction("providerReleaseSlot", slotId) });
+    const bookingId = slot.details?.bookingId || slot.details?.appointmentId || "";
+    actions.push({
+      label: bookingId ? "Cancel appointment" : "Release slot",
+      cls: "btn danger",
+      fn: () => bookingId
+        ? slotAction("cancelAppointment", slotId, { bookingId })
+        : slotAction("providerReleaseSlot", slotId),
+    });
   } else if (status === "blocked") {
     actions.push({ label: "Unblock slot", cls: "btn ghost", fn: () => slotAction("adminUnblockSlot", slotId) });
   }
@@ -760,19 +790,45 @@ function openSlotAction(slotId, status) {
   els.slotActionDialog.showModal();
 }
 
-async function slotAction(functionName, slotId) {
+async function slotAction(functionName, slotId, options = {}) {
   els.slotActionDialog.close();
   const doctorId = els.doctorSelect.value;
   const date = els.dateSelect.value;
   if (!doctorId || !date) return;
 
+  const extra = {};
+  if (functionName === "providerBookSlot") {
+    try {
+      const patientName = sanitizeFormText(window.prompt("Patient name for doctor calendar event") || "", 100);
+      if (!patientName) {
+        showStatus("Patient name is required to book a slot.", true);
+        return;
+      }
+      const patientPhone = validateOptionalPhone(window.prompt("Patient phone with country code, optional") || "");
+      extra.patientName = patientName;
+      if (patientPhone) extra.patientPhone = patientPhone;
+    } catch (error) {
+      showError(error);
+      return;
+    }
+  }
+
   showStatus(`Running ${functionName}...`);
   try {
+    if (functionName === "cancelAppointment") {
+      if (!options.bookingId) throw new Error("Booking id is missing for this appointment.");
+      await callFunction("cancelAppointment", { bookingId: options.bookingId });
+      showStatus("Appointment cancelled.");
+      await loadSlots();
+      return;
+    }
+
     await callFunction(functionName, {
       hospitalId: state.hospitalId,
       doctorId,
       slotId,
       date,
+      ...extra,
     });
     showStatus(`${functionName} succeeded.`);
     await loadSlots();
@@ -1002,6 +1058,7 @@ function renderHospital() {
 
 function patientHospitalLink() {
   const url = new URL(`/hospital/${encodeURIComponent(state.hospitalId || "")}`, PATIENT_WEB_BASE_URL);
+  if (IS_US_MARKET) url.searchParams.set("market", MARKET_COUNTRY);
   return url.toString();
 }
 
@@ -1080,7 +1137,7 @@ function switchTab(tabName) {
 function bindEvents() {
   els.signInBtn.addEventListener("click", () => {
     clearStatus();
-    startGoogleIdTokenSignIn();
+    startGoogleSignIn();
   });
 
   els.signOutBtn.addEventListener("click", () => signOut(state.auth));
