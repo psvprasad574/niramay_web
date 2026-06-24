@@ -15,21 +15,33 @@ history across devices without writing patient PII to Firestore.
 
 ## Firebase
 
-`../niramay_apps/firebase.json` points Hosting at this folder:
+`../niramay_apps/firebase.json` points Hosting at generated market folders.
+Build them from `../niramay_web`:
 
 ```sh
-firebase deploy --only hosting
+node build-market-web.cjs
 ```
 
-Before deploying, set `appCheckSiteKey` in `config.js` to the Firebase App
-Check reCAPTCHA Enterprise site key for the `Niramay Patient Web` Firebase web app.
-The patient callables enforce App Check, so leaving this blank causes Cloud
-Functions to return `UNAUTHENTICATED` even when the patient is signed in.
-
-To deploy functions with it:
+Then deploy from `../niramay_apps`:
 
 ```sh
-firebase deploy --only hosting,functions
+firebase deploy --only hosting:patient-in --project vana-apps
+firebase deploy --only hosting:patient-us --project vana-apps
+```
+
+The generated India app uses `Niramay`, `com.vana.health.patient.in`, and
+default Firestore collections. The generated USA app uses `Aura`,
+`com.vana.health.patient.us`, and `us_*` collections.
+
+Before deploying, make sure the `appCheckSiteKey` in `build-market-web.cjs`
+matches the Firebase App Check reCAPTCHA Enterprise site keys for the web apps.
+The patient callables enforce App Check, so an invalid key causes Cloud
+Functions to return `UNAUTHENTICATED` even when the patient is signed in.
+
+To deploy functions with hosting:
+
+```sh
+firebase deploy --only hosting:patient-in,hosting:patient-us,functions --project vana-apps
 ```
 
 The web app reads Firebase config from Hosting's reserved
@@ -51,6 +63,26 @@ https://<hosting-domain>/?hospitalId=<hospitalId>
 
 ## Privacy
 
-Patient name, phone, and local receipts are stored in browser `localStorage`.
-Firestore receives no patient name or phone. Booking and availability go
-through the existing Cloud Functions in `asia-south1`.
+Patient name, phone, and local receipts are encrypted with Web Crypto and stored
+in browser IndexedDB. Firestore receives no patient name or phone. Booking and
+availability go through the existing Cloud Functions in `asia-south1`.
+
+## Ads
+
+Patient web supports Google AdSense display ads. Ads are disabled by default.
+
+Configure `config.js`:
+
+```js
+ads: {
+  enabled: true,
+  signedOutOnly: true,
+  client: "ca-pub-1234567890123456",
+  desktopLeftSlot: "1111111111",
+  desktopRightSlot: "2222222222",
+  mobileBottomSlot: "3333333333",
+}
+```
+
+With `signedOutOnly: true`, ad containers are hidden after Google sign-in so
+private booking/profile screens do not load third-party ad scripts.

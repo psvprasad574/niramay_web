@@ -5,9 +5,9 @@
     ],
     "target": {
       "namespace": "android_app",
-      "package_name": "com.vana.health.patient.instant",
+      "package_name": "com.vana.health.patient.in",
       "sha256_cert_fingerprints": [
-        "BD:18:AD:DF:94:DA:43:50:E0:CB:EB:BA:7D:B7:49:AF:8E:86:63:1B:A4:F6:8D:CD:60:2D:2D:11:6A:37:94:5D"
+        "09:5B:41:19:1A:58:65:3E:62:88:F1:C4:60:17:8E:CB:41:8B:EB:31:A8:0B:45:5B:56:10:67:DF:C8:53:30:9F"
       ]
     }
   }

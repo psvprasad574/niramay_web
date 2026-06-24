@@ -9,7 +9,10 @@ const GOOGLE_SIGN_IN_STATE_KEY = "niramay.googleSignInState";
 const GOOGLE_SIGN_IN_RETURN_KEY = "niramay.googleSignInReturnUrl";
 const FIREBASE_CONFIG_URL = "/__/firebase/init.json";
 const PUBLIC_CONFIG = window.NIRAMAY_PUBLIC_CONFIG || {};
+const BRAND_NAME = PUBLIC_CONFIG.brandName || "Niramay";
 const statusEl = document.querySelector("#status");
+
+document.title = `${BRAND_NAME} Sign In`;
 
 main().catch((error) => {
   if (statusEl) statusEl.textContent = error?.message || "Sign in failed.";

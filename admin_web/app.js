@@ -34,7 +34,10 @@ const URL_PARAMS = new URLSearchParams(location.search);
 const FIREBASE_APP_CHECK_SITE_KEY = ADMIN_CONFIG.appCheckSiteKey || "";
 const MARKET_COUNTRY = normalizeMarket(URL_PARAMS.get("market") || ADMIN_CONFIG.marketCountry);
 const IS_US_MARKET = MARKET_COUNTRY === "US";
+const BRAND_NAME = ADMIN_CONFIG.brandName || (IS_US_MARKET ? "Aura" : "Niramay");
+const APP_DISPLAY_NAME = ADMIN_CONFIG.appDisplayName || `${BRAND_NAME} Admin`;
 const MAX_PHONE_LENGTH = 25;
+const APPOINTMENT_CANCEL_CUTOFF_MS = 3 * 60 * 60 * 1000;
 const APP_CHECK_CONFIG_ERROR =
   "Admin web App Check is not configured. Add the Firebase App Check reCAPTCHA Enterprise site key before calling Cloud Functions.";
 const PATIENT_WEB_BASE_URL = ADMIN_CONFIG.patientWebBaseUrl || "https://vana-apps.web.app";
@@ -197,6 +200,17 @@ function docRef(baseName, ...segments) {
 }
 
 function initializeMarketUi() {
+  document.title = APP_DISPLAY_NAME;
+  document
+    .querySelector("meta[name='description']")
+    ?.setAttribute("content", `${BRAND_NAME} hospital admin dashboard.`);
+  document
+    .querySelector(".brand")
+    ?.setAttribute("aria-label", `${APP_DISPLAY_NAME} home`);
+  const brandMark = document.querySelector(".brand-mark");
+  if (brandMark) brandMark.textContent = BRAND_NAME.slice(0, 1).toUpperCase();
+  const brandLabel = document.querySelector(".brand strong");
+  if (brandLabel) brandLabel.textContent = BRAND_NAME;
   [els.apPhone, els.dpPhone].forEach((input) => {
     if (input) input.maxLength = MAX_PHONE_LENGTH;
   });
@@ -749,6 +763,20 @@ function formatSlotTime(value) {
   return value;
 }
 
+function parseSlotStart(date, slot) {
+  const raw = String(slot?.start_time || slot?.startTime || slot?.start || "").trim();
+  if (!raw) return null;
+  const parsed = raw.includes("T") || raw.includes("Z")
+    ? new Date(raw)
+    : new Date(`${date}T${raw.length === 5 ? `${raw}:00` : raw}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function canCancelSlot(date, slot) {
+  const start = parseSlotStart(date, slot);
+  return start && start.getTime() - Date.now() >= APPOINTMENT_CANCEL_CUTOFF_MS;
+}
+
 // ---------------------------------------------------------------------------
 // Slot actions
 // ---------------------------------------------------------------------------
@@ -761,18 +789,27 @@ function openSlotAction(slotId, status) {
   els.slotActionMeta.textContent = `Status: ${status}`;
 
   const actions = [];
+  const date = els.dateSelect.value;
   if (status === "available" || status === "free") {
     actions.push({ label: "Block slot", cls: "btn ghost", fn: () => slotAction("adminBlockSlot", slotId) });
     actions.push({ label: "Book slot", cls: "btn", fn: () => slotAction("providerBookSlot", slotId) });
   } else if (status === "booked" || status === "busy") {
     const bookingId = slot.details?.bookingId || slot.details?.appointmentId || "";
-    actions.push({
-      label: bookingId ? "Cancel appointment" : "Release slot",
-      cls: "btn danger",
-      fn: () => bookingId
-        ? slotAction("cancelAppointment", slotId, { bookingId })
-        : slotAction("providerReleaseSlot", slotId),
-    });
+    if (canCancelSlot(date, slot)) {
+      actions.push({
+        label: bookingId ? "Cancel appointment" : "Release slot",
+        cls: "btn danger",
+        fn: () => bookingId
+          ? slotAction("cancelAppointment", slotId, { bookingId })
+          : slotAction("providerReleaseSlot", slotId),
+      });
+    } else {
+      actions.push({
+        label: "Cancellation closed (less than 3 hours)",
+        cls: "btn ghost",
+        fn: () => showStatus("Appointments can only be cancelled at least 3 hours before the slot starts.", true),
+      });
+    }
   } else if (status === "blocked") {
     actions.push({ label: "Unblock slot", cls: "btn ghost", fn: () => slotAction("adminUnblockSlot", slotId) });
   }

@@ -14,14 +14,7 @@ import {
   signOut,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
   getFirestore,
-  limit,
-  query,
-  where,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   getFunctions,
@@ -37,16 +30,18 @@ const LEGACY_ENCRYPTED_RECORD_PREFIX = "niramay-web-v1:";
 const ENCRYPTION_SALT_PREFIX = "NiramayPatientWeb2026";
 const GOOGLE_DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
 const GOOGLE_OAUTH_CLIENT_ID = "76866563498-ks6v02eb5abro9in7imkc0f5q8kfe29j.apps.googleusercontent.com";
-const FIREBASE_AUTH_DOMAIN = "vana-apps.web.app";
 const PUBLIC_CONFIG = window.NIRAMAY_PUBLIC_CONFIG || {};
 const URL_PARAMS = new URLSearchParams(location.search);
 const FIREBASE_APP_CHECK_SITE_KEY = PUBLIC_CONFIG.appCheckSiteKey || "";
 const ADS_CONFIG = PUBLIC_CONFIG.ads || {};
 const MARKET_COUNTRY = normalizeMarket(URL_PARAMS.get("market") || PUBLIC_CONFIG.marketCountry);
 const IS_US_MARKET = MARKET_COUNTRY === "US";
+const BRAND_NAME = PUBLIC_CONFIG.brandName || (IS_US_MARKET ? "Aura" : "Niramay");
+const APP_DISPLAY_NAME = PUBLIC_CONFIG.appDisplayName || `${BRAND_NAME} Aarogya`;
 const PROFILE_KEY = `niramay.patient.${MARKET_COUNTRY.toLowerCase()}.profile.v1`;
 const RECEIPTS_KEY = `niramay.patient.${MARKET_COUNTRY.toLowerCase()}.receipts.v1`;
 const MAX_PHONE_LENGTH = 25;
+const PUBLIC_HOSPITAL_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const US_STATES = [
   "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
   "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
@@ -55,9 +50,11 @@ const US_STATES = [
   "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
   "DC",
 ];
-const PATIENT_APP_INSTALL_URL =
-  PUBLIC_CONFIG.patientAppInstallUrl ||
-  "https://play.google.com/store/apps/details?id=com.vana.health.patient.instant";
+const EXPECTED_PATIENT_APP_PACKAGE = IS_US_MARKET ? "com.vana.health.patient.us" : "com.vana.health.patient.in";
+const EXPECTED_PATIENT_APP_SCHEME = IS_US_MARKET ? "niramay-us" : "niramay-in";
+const PATIENT_APP_PACKAGE = allowedPatientPackage(PUBLIC_CONFIG.patientAppPackage);
+const PATIENT_APP_SCHEME = allowedPatientScheme(PUBLIC_CONFIG.patientAppScheme);
+const PATIENT_APP_INSTALL_URL = allowedPatientInstallUrl(PUBLIC_CONFIG.patientAppInstallUrl);
 const APP_CHECK_CONFIG_ERROR =
   "Patient web App Check is not configured. Add the Firebase App Check reCAPTCHA v3 site key before calling Cloud Functions.";
 const GOOGLE_SIGN_IN_STATE_KEY = "niramay.googleSignInState";
@@ -191,16 +188,41 @@ function normalizeMarket(value) {
   return market === "US" ? "US" : "IN";
 }
 
-function collectionName(baseName) {
-  return IS_US_MARKET ? `us_${baseName}` : baseName;
+function allowedPatientPackage(value) {
+  const packageName = String(value || EXPECTED_PATIENT_APP_PACKAGE).trim();
+  if (packageName !== EXPECTED_PATIENT_APP_PACKAGE) {
+    console.error("Ignoring invalid patient app package config.");
+    return EXPECTED_PATIENT_APP_PACKAGE;
+  }
+  return packageName;
 }
 
-function collectionRef(baseName, ...segments) {
-  return collection(state.db, collectionName(baseName), ...segments);
+function allowedPatientScheme(value) {
+  const scheme = String(value || EXPECTED_PATIENT_APP_SCHEME).trim();
+  if (scheme !== EXPECTED_PATIENT_APP_SCHEME) {
+    console.error("Ignoring invalid patient app scheme config.");
+    return EXPECTED_PATIENT_APP_SCHEME;
+  }
+  return scheme;
 }
 
-function docRef(baseName, ...segments) {
-  return doc(state.db, collectionName(baseName), ...segments);
+function allowedPatientInstallUrl(value) {
+  const fallback = `https://play.google.com/store/apps/details?id=${EXPECTED_PATIENT_APP_PACKAGE}`;
+  try {
+    const url = new URL(value || fallback);
+    if (
+      url.protocol === "https:" &&
+      url.hostname === "play.google.com" &&
+      url.pathname === "/store/apps/details" &&
+      url.searchParams.get("id") === EXPECTED_PATIENT_APP_PACKAGE
+    ) {
+      return url.toString();
+    }
+  } catch (_) {
+    // Fall through to the safe default.
+  }
+  console.error("Ignoring invalid patient app install URL config.");
+  return fallback;
 }
 
 async function loadFirebaseConfig() {
@@ -215,9 +237,7 @@ async function loadFirebaseConfig() {
 }
 
 function normalizeFirebaseConfig(config) {
-  const normalized = { ...config };
-  normalized.authDomain = FIREBASE_AUTH_DOMAIN;
-  return normalized;
+  return { ...config };
 }
 
 async function main() {
@@ -268,7 +288,7 @@ async function main() {
 }
 
 function updateAdVisibilityForAuthState() {
-  if (state.user) {
+  if (!ADS_CONFIG.enabled || (ADS_CONFIG.signedOutOnly !== false && state.user)) {
     hideBannerAds();
     return;
   }
@@ -276,6 +296,30 @@ function updateAdVisibilityForAuthState() {
 }
 
 function initializeMarketUi() {
+  document.title = `${BRAND_NAME} Patient Booking`;
+  document
+    .querySelector("meta[name='description']")
+    ?.setAttribute(
+      "content",
+      `Book appointments with ${BRAND_NAME} providers from the web.`,
+    );
+  document
+    .querySelector(".brand")
+    ?.setAttribute("aria-label", `${BRAND_NAME} home`);
+  const brandLabel = document.querySelector(".brand strong");
+  if (brandLabel) brandLabel.textContent = BRAND_NAME;
+  const linkChoiceText = document.querySelector("#hospitalLinkChoice .link-choice-card > p:not(.eyebrow)");
+  if (linkChoiceText) {
+    linkChoiceText.textContent = `Continue in browser or install ${APP_DISPLAY_NAME}.`;
+  }
+  if (els.installAppBtn) {
+    els.installAppBtn.href = PATIENT_APP_INSTALL_URL;
+  }
+  on(els.installAppBtn, "click", (event) => {
+    if (!state.hospitalId || !isAndroidUserAgent()) return;
+    event.preventDefault();
+    openPatientApp(state.hospitalId);
+  });
   if (els.patientPhone) els.patientPhone.maxLength = MAX_PHONE_LENGTH;
   if (els.bookingPatientPhone) els.bookingPatientPhone.maxLength = MAX_PHONE_LENGTH;
   if (!els.bookingPatientState) return;
@@ -288,9 +332,13 @@ function initializeMarketUi() {
 }
 
 function initializeBannerAds() {
-  if (state.user) return;
+  if (!ADS_CONFIG.enabled) return;
+  if (ADS_CONFIG.signedOutOnly !== false && state.user) return;
   const client = ADS_CONFIG.client || "";
-  if (!client) return;
+  if (!client) {
+    console.warn("Patient web ads are enabled but ads.client is missing.");
+    return;
+  }
 
   const slots = [
     { element: els.desktopLeftAd, slot: ADS_CONFIG.desktopLeftSlot, className: "ad-unit-side" },
@@ -298,7 +346,10 @@ function initializeBannerAds() {
     { element: els.mobileBottomAd, slot: ADS_CONFIG.mobileBottomSlot, className: "ad-unit-mobile" },
   ].filter((item) => item.element && item.slot);
 
-  if (!slots.length) return;
+  if (!slots.length) {
+    console.warn("Patient web ads are enabled but no ad slot IDs are configured.");
+    return;
+  }
   loadGoogleAdsScript(client);
   for (const item of slots) {
     item.element.hidden = false;
@@ -684,6 +735,18 @@ function showHospitalLinkChoice() {
   els.hospitalLinkChoice.hidden = false;
 }
 
+function isAndroidUserAgent() {
+  return /Android/i.test(navigator.userAgent || "");
+}
+
+function openPatientApp(hospitalId) {
+  const validHospitalId = cleanId(hospitalId);
+  if (!validHospitalId) return;
+  const encodedHospitalId = encodeURIComponent(validHospitalId);
+  const fallbackUrl = encodeURIComponent(window.location.href);
+  window.location.href = `intent://hospital/${encodedHospitalId}#Intent;scheme=${PATIENT_APP_SCHEME};package=${PATIENT_APP_PACKAGE};S.browser_fallback_url=${fallbackUrl};end`;
+}
+
 function parseHospitalId(value) {
   if (!value) return "";
   try {
@@ -707,7 +770,8 @@ function parseHospitalId(value) {
 }
 
 function cleanId(value) {
-  return String(value).trim().replace(/^\/+|\/+$/g, "");
+  const id = sanitizeUserText(value, 128).replace(/^\/+|\/+$/g, "");
+  return PUBLIC_HOSPITAL_ID_PATTERN.test(id) ? id : "";
 }
 
 function initializeDateInput() {
@@ -1035,81 +1099,6 @@ function renderCitySuggestions(cities) {
   });
 }
 
-async function searchDoctors(searchText) {
-  if (!state.cityContext) {
-    const snap = await getDocs(query(collectionRef("doctors"), limit(100)));
-    return snap.docs
-      .map((item) => normalizeSearchDoctor(item.id, item.data()))
-      .filter((doctor) => doctor.isAvailable)
-      .filter((doctor) => matchesProviderSearch(doctor, searchText));
-  }
-
-  if (state.cityContext?.type === "location") {
-    const geohash4 = encodeGeohash(
-      state.cityContext.location.latitude,
-      state.cityContext.location.longitude,
-      4,
-    );
-    const [start, end] = geohashRange(geohash4);
-    const snap = await getDocs(
-      query(
-        collectionRef("doctors"),
-        where("geohash4", ">=", start),
-        where("geohash4", "<", end),
-        limit(80),
-      ),
-    );
-    let doctors = snap.docs
-      .map((item) => normalizeSearchDoctor(item.id, item.data()))
-      .filter((doctor) => doctor.isAvailable)
-      .filter((doctor) => matchesProviderSearch(doctor, searchText));
-    if (!doctors.length && state.cityContext.city) {
-      doctors = await searchDoctorsByCity(state.cityContext.city, searchText);
-    }
-    if (!doctors.length) {
-      const fallbackSnap = await getDocs(query(collectionRef("doctors"), limit(100)));
-      doctors = fallbackSnap.docs
-        .map((item) => normalizeSearchDoctor(item.id, item.data()))
-        .filter((doctor) => doctor.isAvailable)
-        .filter((doctor) => matchesProviderSearch(doctor, searchText));
-    }
-    return doctors;
-  }
-
-  return searchDoctorsByCity(state.cityContext.city, searchText);
-}
-
-async function searchDoctorsByCity(city, searchText) {
-  const citySearchSnap = await getDocs(
-    query(
-      collectionRef("doctors"),
-      where("citySearch", "==", city),
-      limit(80),
-    ),
-  ).catch(() => ({ docs: [] }));
-  const citySnap = await getDocs(
-    query(
-      collectionRef("doctors"),
-      where("city", "==", city),
-      limit(80),
-    ),
-  ).catch(() => ({ docs: [] }));
-  const byId = new Map([...citySearchSnap.docs, ...citySnap.docs].map((item) => [item.id, item]));
-  if (!byId.size) {
-    const fallbackSnap = await getDocs(query(collectionRef("doctors"), limit(100)));
-    for (const item of fallbackSnap.docs) {
-      const doctor = normalizeSearchDoctor(item.id, item.data());
-      if (normalizeSearchText(doctor.city) === city) {
-        byId.set(item.id, item);
-      }
-    }
-  }
-  return [...byId.values()]
-    .map((item) => normalizeSearchDoctor(item.id, item.data()))
-    .filter((doctor) => doctor.isAvailable)
-    .filter((doctor) => matchesProviderSearch(doctor, searchText));
-}
-
 async function inferCityFromLocation(location) {
   return {};
 }
@@ -1132,91 +1121,6 @@ async function reverseGeocodeCity(location) {
   } catch (_) {
     return null;
   }
-}
-
-async function buildSearchResults(doctors, searchText) {
-  const byHospital = new Map();
-  for (const doctor of doctors) {
-    const hospitalId = doctor.practiceId || doctor.hospitalId;
-    if (!hospitalId) continue;
-    if (!byHospital.has(hospitalId)) {
-      byHospital.set(hospitalId, {
-        hospitalId,
-        hospitalName: doctor.clinicName || hospitalId,
-        address: doctor.clinicAddress || "",
-        city: doctor.city || "",
-        doctors: [],
-      });
-    }
-    byHospital.get(hospitalId).doctors.push(doctor);
-  }
-
-  if (searchText) {
-    const hospitals = await searchHospitalsByName(searchText);
-    for (const hospital of hospitals) {
-      const existing = byHospital.get(hospital.hospitalId);
-    byHospital.set(hospital.hospitalId, {
-      hospitalId: hospital.hospitalId,
-      hospitalName: hospital.name,
-      address: hospital.address,
-      city: hospital.city,
-      photoUrl: hospital.photoUrl,
-      doctors: existing?.doctors || [],
-    });
-  }
-  }
-
-  const summaries = await fetchHospitalSummaries([...byHospital.keys()]);
-  for (const [hospitalId, summary] of summaries.entries()) {
-    const result = byHospital.get(hospitalId);
-    if (!result) continue;
-    result.hospitalName = summary.name || result.hospitalName || "Hospital";
-    result.address = result.address || summary.address || "";
-    result.city = result.city || summary.city || "";
-    result.photoUrl = result.photoUrl || summary.photoUrl || "";
-  }
-
-  return [...byHospital.values()].sort((a, b) =>
-    a.hospitalName.localeCompare(b.hospitalName),
-  );
-}
-
-async function fetchHospitalSummaries(hospitalIds) {
-  const summaries = new Map();
-  await Promise.all(hospitalIds.map(async (hospitalId) => {
-    try {
-      summaries.set(hospitalId, await fetchHospital(hospitalId));
-    } catch (_) {
-      // Search results can still show doctor records when hospital metadata is unavailable.
-    }
-  }));
-  return summaries;
-}
-
-async function searchHospitalsByName(searchText) {
-  const hospitalsRef = collectionRef("hospitals");
-  const snap = state.cityContext?.type === "city"
-    ? await getDocs(
-      query(
-        hospitalsRef,
-        where("adminProfile.citySearch", "==", state.cityContext.city),
-        limit(50),
-      ),
-    )
-    : await getDocs(query(hospitalsRef, limit(100)));
-  return snap.docs
-    .map((item) => {
-      const data = item.data();
-      const adminProfile = data.adminProfile || {};
-      return {
-        hospitalId: item.id,
-        name: firstText(adminProfile.clinicName, data.clinicName, data.name, "Hospital"),
-        address: firstText(adminProfile.clinicAddress, adminProfile.address, data.clinicAddress, data.address),
-        city: firstText(adminProfile.city, data.city),
-        photoUrl: hospitalImageUrl(data),
-      };
-    })
-    .filter((hospital) => includesSearch(hospital.name, searchText));
 }
 
 function renderSearchResults(results) {
@@ -1246,37 +1150,6 @@ function renderSearchResults(results) {
       await loadHospitalContext(hospitalId);
     });
   });
-}
-
-function normalizeSearchDoctor(docId, data) {
-  return {
-    docId,
-    uid: data.uid || docId,
-    practiceId: data.practiceId || data.hospitalId || "",
-    hospitalId: data.hospitalId || data.practiceId || "",
-    name: data.name || "Doctor",
-    specialty: data.specialty || "",
-    clinicName: data.clinicName || "",
-    clinicAddress: data.clinicAddress || "",
-    city: data.city || "",
-    photoUrl: doctorImageUrl(data),
-    hospitalIconUrl: firstText(data.hospitalIconUrl),
-    hospitalPhotoUrls: firstStringArray(data.hospitalPhotoUrls),
-    credential: data.credential || null,
-    isAvailable: data.isAvailable !== false,
-  };
-}
-
-function matchesProviderSearch(doctor, searchText) {
-  if (!searchText) return true;
-  return includesSearch(doctor.clinicName, searchText) ||
-    includesSearch(doctor.clinicAddress, searchText) ||
-    includesSearch(doctor.name, searchText) ||
-    includesSearch(doctor.specialty, searchText);
-}
-
-function includesSearch(value, searchText) {
-  return normalizeSearchText(value).includes(normalizeSearchText(searchText));
 }
 
 function normalizeSearchText(value) {
@@ -1323,55 +1196,12 @@ function allowedPatientStates(doctor) {
     : [];
 }
 
-function prefixRange(value) {
-  const start = normalizeSearchText(value);
-  const last = start.charCodeAt(start.length - 1);
-  const end = `${start.slice(0, -1)}${String.fromCharCode(last + 1)}`;
-  return [start, end];
-}
-
 function titleCase(value) {
   return String(value || "")
     .split(/\s+/)
     .filter(Boolean)
     .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
     .join(" ");
-}
-
-function geohashRange(geohash) {
-  const last = geohash.charCodeAt(geohash.length - 1);
-  return [geohash, `${geohash.slice(0, -1)}${String.fromCharCode(last + 1)}`];
-}
-
-function encodeGeohash(latitude, longitude, precision = 4) {
-  const base32 = "0123456789bcdefghjkmnpqrstuvwxyz";
-  let isEven = true;
-  let bit = 0;
-  let ch = 0;
-  const hash = [];
-  const lat = [-90, 90];
-  const lon = [-180, 180];
-
-  while (hash.length < precision) {
-    const range = isEven ? lon : lat;
-    const value = isEven ? longitude : latitude;
-    const mid = (range[0] + range[1]) / 2;
-    if (value >= mid) {
-      ch |= 1 << (4 - bit);
-      range[0] = mid;
-    } else {
-      range[1] = mid;
-    }
-    isEven = !isEven;
-    if (bit < 4) {
-      bit += 1;
-    } else {
-      hash.push(base32[ch]);
-      bit = 0;
-      ch = 0;
-    }
-  }
-  return hash.join("");
 }
 
 function locationErrorMessage(error) {
