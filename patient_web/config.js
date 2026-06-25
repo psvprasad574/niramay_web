@@ -9,6 +9,8 @@ window.NIRAMAY_PUBLIC_CONFIG = {
   patientAppPackage: "com.vana.health.patient.in",
   patientAppScheme: "niramay-in",
   patientAppInstallUrl: "https://play.google.com/store/apps/details?id=com.vana.health.patient.in",
+  // Firebase web config is public by design. Keep the API key restricted in
+  // Google Cloud/Firebase Console to approved web referrers and Firebase APIs.
   firebaseConfig: {
     apiKey: "AIzaSyCNtIDAo6DsBkjMjUUsyG5GQ3fOFG9Kc60",
     authDomain: "vana-apps.firebaseapp.com",

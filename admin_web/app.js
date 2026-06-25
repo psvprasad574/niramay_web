@@ -345,10 +345,10 @@ function validateOptionalUrl(value, label = "URL") {
   if (!url) return "";
   try {
     const parsed = new URL(url);
-    if (!["https:", "http:"].includes(parsed.protocol)) throw new Error();
+    if (parsed.protocol !== "https:") throw new Error();
     return parsed.toString();
   } catch (_) {
-    throw new Error(`Enter a valid ${label.toLowerCase()}.`);
+    throw new Error(`Enter a valid https ${label.toLowerCase()}.`);
   }
 }
 

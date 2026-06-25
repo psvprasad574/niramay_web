@@ -5,6 +5,8 @@ const path = require("path");
 
 const root = __dirname;
 const distRoot = path.join(root, "..", "niramay_apps", "web_dist");
+// Public browser identifiers. Restrict the Firebase API key in Google Cloud to
+// the production hosting referrers and Firebase APIs before deploying.
 const appCheckSiteKey = "6LfeeMssAAAAAJvPq3zt1WxQWGDi-pfWp_3-nDVP";
 const patientSha256 =
   "09:5B:41:19:1A:58:65:3E:62:88:F1:C4:60:17:8E:CB:41:8B:EB:31:A8:0B:45:5B:56:10:67:DF:C8:53:30:9F";
