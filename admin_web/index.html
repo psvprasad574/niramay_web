@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#0f766e">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' https://www.gstatic.com https://accounts.google.com https://apis.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://www.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebaseappcheck.googleapis.com; frame-src https://accounts.google.com https://*.firebaseapp.com https://www.google.com https://apis.google.com https://www.recaptcha.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+      content="default-src 'self'; script-src 'self' https://www.gstatic.com https://accounts.google.com https://apis.google.com https://www.google.com https://www.recaptcha.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://www.googleapis.com https://*.firebaseio.com https://*.cloudfunctions.net https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firestore.googleapis.com https://firebaseappcheck.googleapis.com; frame-src https://accounts.google.com https://www.google.com https://apis.google.com https://www.recaptcha.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
     >
     <meta name="description" content="Niramay hospital admin dashboard.">
     <title>Niramay Admin</title>
@@ -36,6 +36,21 @@
           <p class="eyebrow">Hospital administration</p>
           <h1>Sign in to manage your hospital.</h1>
           <p class="muted">Use the Google account that owns your hospital profile.</p>
+          <div class="terms-card">
+            <h2>Terms and Conditions</h2>
+            <div class="terms-scroll">
+              <p><strong>Service purpose.</strong> This dashboard helps authorized hospitals, clinics, doctors, and helpers manage doctor information, appointment availability, bookings, and related operations.</p>
+              <p><strong>Doctor and clinic data.</strong> Admins confirm they have authority to store and display doctor, helper, clinic, schedule, and contact information to patients for appointment booking and related communication.</p>
+              <p><strong>Data we store.</strong> Provider workflows store doctor, helper, clinic, schedule, booking, and operational data needed to show doctors to patients and manage appointments. Do not enter data you are not authorized to share.</p>
+              <p><strong>No emergency or medical advice.</strong> The service is a scheduling tool only. It does not provide medical advice, diagnosis, treatment, emergency support, or guaranteed appointment availability.</p>
+              <p><strong>Service availability and closure.</strong> The company may change, suspend, limit, or close the project at any time, including to reduce losses, address legal or compliance risk, protect users, improve security, or respond to operational needs.</p>
+              <p><strong>Responsible use.</strong> Users must not misuse the service, attempt unauthorized access, upload unlawful or misleading content, or violate applicable law or third-party rights.</p>
+            </div>
+            <label class="terms-check">
+              <input id="termsAcceptCheck" type="checkbox">
+              <span>I have read and accept these Terms and Conditions.</span>
+            </label>
+          </div>
         </section>
 
         <!-- Dashboard -->

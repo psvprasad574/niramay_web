@@ -180,6 +180,47 @@ main {
 
 .center-card p { line-height: 1.6; }
 
+.terms-card {
+  margin-top: 22px;
+  padding: 16px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.terms-card h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.terms-scroll {
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 8px;
+}
+
+.terms-scroll p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.terms-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 12px;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.terms-check input {
+  margin-top: 3px;
+}
+
 /* Dashboard layout */
 .dashboard-grid {
   display: grid;

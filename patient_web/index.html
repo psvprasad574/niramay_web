@@ -10,9 +10,10 @@
     >
     <meta
       name="description"
-      content="Book appointments with Niramay providers from the web."
+      content="Niramay is a digital healthcare platform designed to help patients search for doctors, book appointments, and manage their clinical visits securely."
     >
-    <title>Niramay Patient Booking</title>
+    <meta name="application-name" content="Niramay">
+    <title>Niramay</title>
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="stylesheet" href="/styles.css?v=20260606-hospital-images-1">
   </head>
@@ -25,8 +26,8 @@
       <div class="link-choice-card">
         <img class="link-choice-logo" src="/assets/patient_logo.png" alt="">
         <p class="eyebrow">Hospital link</p>
-        <h1>Open hospital booking</h1>
-        <p>Continue in browser or install Niramay Aarogya.</p>
+        <h2>Niramay</h2>
+        <p>Niramay helps patients open hospital booking links and request appointments online.</p>
         <div class="link-choice-actions">
           <button id="continueWebBtn" type="button">Continue web</button>
           <a id="installAppBtn" class="ghost button-link" href="https://play.google.com/store/apps/details?id=com.vana.health.patient.in" target="_blank" rel="noopener">
@@ -44,7 +45,7 @@
           </span>
           <span>
             <strong>Niramay</strong>
-            <small>Patient booking</small>
+            <small>Appointment requests</small>
           </span>
         </a>
         <button id="topCityPill" class="city-pill" type="button" hidden>
@@ -67,18 +68,59 @@
 
         <section id="welcomeView" class="hero">
           <div class="hero-copy">
-            <p class="eyebrow">Appointments without app installs</p>
-            <h1>Find a provider, then book your visit.</h1>
-            <p>
-              Sign in with Google, choose your city, then search hospitals,
-              doctors, or specialities nearby. Provider links open directly.
+            <h1>Niramay</h1>
+            <p id="homepagePurpose">
+              Niramay is a digital healthcare platform designed to help
+              patients search for doctors, book appointments, and manage their
+              clinical visits securely.
             </p>
+            <p>
+              Patients can sign in with Google, choose their city, find
+              participating healthcare providers, view appointment availability,
+              and request clinic or hospital visits online.
+            </p>
+            <section class="homepage-info" aria-labelledby="homepageInfoTitle">
+              <h2 id="homepageInfoTitle">About Niramay</h2>
+              <p id="homepageFunctionality">
+                Niramay helps patients discover participating hospitals,
+                clinics, and doctors, then request appointment bookings with
+                selected providers.
+              </p>
+              <h3>How we use your Google Data</h3>
+              <p id="homepageGoogleData">
+                Niramay uses Google Sign-In to securely
+                authenticate patients. When authorized by the user, we access
+                your Google Drive appdata scope solely to store and sync your
+                appointment booking receipts locally and privately within your
+                own Drive storage.
+              </p>
+              <div class="homepage-links">
+                <a href="/privacy.html">Privacy Policy</a>
+                <a href="/terms/">Terms and Conditions</a>
+              </div>
+            </section>
           </div>
           <section class="lookup-panel" aria-label="Provider discovery">
             <div id="signedOutSearchPrompt" class="search-auth-prompt">
               <p class="eyebrow">Google sign-in</p>
               <h2>Start with your Gmail account.</h2>
               <p>After sign-in, choose your city and find providers near you.</p>
+              <div class="terms-card">
+                <h3>Terms and Conditions</h3>
+                <div class="terms-scroll">
+                  <p><strong>Service purpose.</strong> This app helps patients find listed doctors, view availability, and request appointments with participating hospitals or clinics.</p>
+                  <p><strong>Data we store.</strong> For patient accounts, the app stores only the Gmail address used for sign-in and technical identifiers needed to keep bookings and notifications working. We do not ask patients to enter extra personal profile data for app login.</p>
+                  <p><strong>Booking information.</strong> Appointment details needed for a booking may be shared with the selected hospital or doctor. Local receipts may be kept on your device or in your own Google Drive app data when you allow Drive access.</p>
+                  <p><strong>Doctor information.</strong> Provider admins are responsible for keeping doctor, clinic, and schedule information accurate and current.</p>
+                  <p><strong>No emergency or medical advice.</strong> The service is only for appointment discovery and booking. It does not provide medical advice, diagnosis, treatment, emergency support, or guaranteed appointment acceptance.</p>
+                  <p><strong>Service availability and closure.</strong> The company may change, suspend, limit, or close the project at any time, including to reduce losses, address legal or compliance risk, protect users, improve security, or respond to operational needs.</p>
+                  <p><strong>Responsible use.</strong> Users must not misuse the service, attempt unauthorized access, submit false bookings, interfere with security, or violate applicable law or third-party rights.</p>
+                </div>
+                <label class="terms-check">
+                  <input id="termsAcceptCheck" type="checkbox">
+                  <span>I have read and accept these Terms and Conditions.</span>
+                </label>
+              </div>
             </div>
             <section id="cityPanel" class="city-panel" hidden>
               <div class="city-bar">

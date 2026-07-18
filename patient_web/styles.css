@@ -290,8 +290,17 @@ main {
 .hero h1 {
   max-width: 780px;
   margin: 10px 0 16px;
-  font-size: clamp(2.1rem, 6vw, 5rem);
+  font-size: clamp(2.1rem, 4vw, 3.6rem);
   line-height: 0.98;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.hero h2 {
+  max-width: 780px;
+  margin: 10px 0 16px;
+  font-size: clamp(1.8rem, 4vw, 3.6rem);
+  line-height: 1;
   letter-spacing: 0;
 }
 
@@ -300,6 +309,37 @@ main {
   color: var(--muted);
   font-size: 1.06rem;
   line-height: 1.7;
+}
+
+.homepage-info {
+  max-width: 620px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.homepage-info h2 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.homepage-info p {
+  margin: 8px 0 0;
+  font-size: 0.98rem;
+  line-height: 1.55;
+}
+
+.homepage-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.homepage-info a {
+  color: var(--brand);
+  font-weight: 800;
 }
 
 .lookup-panel,
@@ -344,6 +384,47 @@ main {
 .search-auth-prompt {
   display: grid;
   gap: 4px;
+}
+
+.terms-card {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.terms-card h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.terms-scroll {
+  max-height: 220px;
+  overflow: auto;
+  padding-right: 8px;
+}
+
+.terms-scroll p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.terms-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  color: var(--text);
+  font-size: 0.92rem;
+  line-height: 1.4;
+}
+
+.terms-check input {
+  margin-top: 3px;
 }
 
 .city-panel {
@@ -643,6 +724,33 @@ main {
   font-size: 0.9rem;
 }
 
+.policy-page {
+  max-width: 780px;
+  padding: 48px 0 72px;
+}
+
+.policy-page h1 {
+  margin: 18px 0 16px;
+  font-size: clamp(2rem, 4vw, 3.2rem);
+  line-height: 1.05;
+}
+
+.policy-page h2 {
+  margin: 28px 0 8px;
+  font-size: 1.25rem;
+}
+
+.policy-page p {
+  color: var(--muted);
+  font-size: 1.04rem;
+  line-height: 1.7;
+}
+
+.policy-back {
+  color: var(--brand);
+  font-weight: 800;
+}
+
 dialog {
   width: min(440px, calc(100% - 24px));
   border: 0;
@@ -782,6 +890,7 @@ dialog::backdrop {
     margin-top: 8px;
     font-size: 2.15rem;
     line-height: 1.05;
+    white-space: normal;
   }
 
   .hero p {

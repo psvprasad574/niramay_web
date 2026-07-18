@@ -29,15 +29,20 @@ const ENCRYPTED_RECORD_PREFIX = "niramay-web-v2:";
 const LEGACY_ENCRYPTED_RECORD_PREFIX = "niramay-web-v1:";
 const ENCRYPTION_SALT_PREFIX = "NiramayPatientWeb2026";
 const GOOGLE_DRIVE_APPDATA_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
-const GOOGLE_OAUTH_CLIENT_ID = "76866563498-ks6v02eb5abro9in7imkc0f5q8kfe29j.apps.googleusercontent.com";
 const PUBLIC_CONFIG = window.NIRAMAY_PUBLIC_CONFIG || {};
+const GOOGLE_OAUTH_CLIENT_ID =
+  PUBLIC_CONFIG.googleOAuthClientId ||
+  "76866563498-ks6v02eb5abro9in7imkc0f5q8kfe29j.apps.googleusercontent.com";
 const URL_PARAMS = new URLSearchParams(location.search);
 const FIREBASE_APP_CHECK_SITE_KEY = PUBLIC_CONFIG.appCheckSiteKey || "";
 const ADS_CONFIG = PUBLIC_CONFIG.ads || {};
 const MARKET_COUNTRY = normalizeMarket(URL_PARAMS.get("market") || PUBLIC_CONFIG.marketCountry);
 const IS_US_MARKET = MARKET_COUNTRY === "US";
-const BRAND_NAME = PUBLIC_CONFIG.brandName || (IS_US_MARKET ? "Aura" : "Niramay");
-const APP_DISPLAY_NAME = PUBLIC_CONFIG.appDisplayName || `${BRAND_NAME} Aarogya`;
+const FUNCTIONS_PREFIX = sanitizePrefix(PUBLIC_CONFIG.functionsPrefix);
+const MARKET_DEFAULT_APP_NAME = IS_US_MARKET ? "Aura" : "Niramay";
+const BRAND_NAME = PUBLIC_CONFIG.brandName || MARKET_DEFAULT_APP_NAME;
+const OAUTH_APP_NAME = PUBLIC_CONFIG.oauthAppName || BRAND_NAME;
+const APP_DISPLAY_NAME = PUBLIC_CONFIG.appDisplayName || OAUTH_APP_NAME;
 const PROFILE_KEY = `niramay.patient.${MARKET_COUNTRY.toLowerCase()}.profile.v1`;
 const RECEIPTS_KEY = `niramay.patient.${MARKET_COUNTRY.toLowerCase()}.receipts.v1`;
 const MAX_PHONE_LENGTH = 25;
@@ -50,7 +55,7 @@ const US_STATES = [
   "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
   "DC",
 ];
-const EXPECTED_PATIENT_APP_PACKAGE = IS_US_MARKET ? "com.vana.health.patient.us" : "com.vana.health.patient.in";
+const EXPECTED_PATIENT_APP_PACKAGE = IS_US_MARKET ? "com.aura.health.patient" : "com.vana.health.patient.in";
 const EXPECTED_PATIENT_APP_SCHEME = IS_US_MARKET ? "niramay-us" : "niramay-in";
 const PATIENT_APP_PACKAGE = allowedPatientPackage(PUBLIC_CONFIG.patientAppPackage);
 const PATIENT_APP_SCHEME = allowedPatientScheme(PUBLIC_CONFIG.patientAppScheme);
@@ -61,9 +66,11 @@ const GOOGLE_SIGN_IN_STATE_KEY = "niramay.googleSignInState";
 const GOOGLE_SIGN_IN_RETURN_KEY = "niramay.googleSignInReturnUrl";
 const AUTH_DEBUG = new URLSearchParams(location.search).has("debugAuth");
 const FIREBASE_CONFIG_URL = "/__/firebase/init.json";
+const TERMS_ACCEPTED_KEY = `niramay.patient.${MARKET_COUNTRY.toLowerCase()}.terms.v1`;
 
 const els = {
   signInBtn: document.querySelector("#signInBtn"),
+  termsAcceptCheck: document.querySelector("#termsAcceptCheck"),
   desktopLeftAd: document.querySelector("#desktopLeftAd"),
   desktopRightAd: document.querySelector("#desktopRightAd"),
   mobileBottomAd: document.querySelector("#mobileBottomAd"),
@@ -157,6 +164,10 @@ const state = {
 
 main().catch((error) => showError(error));
 
+function on(element, eventName, handler) {
+  if (element) element.addEventListener(eventName, handler);
+}
+
 function initializePatientAppCheck() {
   if (!FIREBASE_APP_CHECK_SITE_KEY) {
     console.error(APP_CHECK_CONFIG_ERROR);
@@ -180,12 +191,22 @@ async function callPatientFunction(name, data = {}) {
     throw new Error(APP_CHECK_CONFIG_ERROR);
   }
   await user.getIdToken(true);
-  return httpsCallable(state.functions, name)({ market: MARKET_COUNTRY, ...data });
+  return httpsCallable(state.functions, functionName(name))({ market: MARKET_COUNTRY, ...data });
 }
 
 function normalizeMarket(value) {
   const market = String(value || "IN").trim().toUpperCase();
   return market === "US" ? "US" : "IN";
+}
+
+function sanitizePrefix(value) {
+  const prefix = String(value || "").trim();
+  return /^[A-Za-z0-9_]*$/.test(prefix) ? prefix : "";
+}
+
+function functionName(name) {
+  if (!FUNCTIONS_PREFIX) return name;
+  return `${FUNCTIONS_PREFIX}${name}`;
 }
 
 function allowedPatientPackage(value) {
@@ -296,21 +317,48 @@ function updateAdVisibilityForAuthState() {
 }
 
 function initializeMarketUi() {
-  document.title = `${BRAND_NAME} Patient Booking`;
+  const homepageAppName = OAUTH_APP_NAME;
+  document.title = homepageAppName;
+  document
+    .querySelector("meta[name='application-name']")
+    ?.setAttribute("content", homepageAppName);
   document
     .querySelector("meta[name='description']")
     ?.setAttribute(
       "content",
-      `Book appointments with ${BRAND_NAME} providers from the web.`,
+      `${homepageAppName} is a digital healthcare platform designed to help patients search for doctors, book appointments, and manage their clinical visits securely.`,
     );
   document
     .querySelector(".brand")
-    ?.setAttribute("aria-label", `${BRAND_NAME} home`);
+    ?.setAttribute("aria-label", `${homepageAppName} home`);
   const brandLabel = document.querySelector(".brand strong");
-  if (brandLabel) brandLabel.textContent = BRAND_NAME;
+  if (brandLabel) brandLabel.textContent = homepageAppName;
+  const heroTitle = document.querySelector(".hero-copy h1");
+  if (heroTitle) heroTitle.textContent = homepageAppName;
+  const heroPurpose = document.querySelector("#homepagePurpose");
+  if (heroPurpose) {
+    heroPurpose.textContent =
+      `${homepageAppName} is a digital healthcare platform designed to help patients search for doctors, book appointments, and manage their clinical visits securely.`;
+  }
+  const homepageInfoTitle = document.querySelector("#homepageInfoTitle");
+  if (homepageInfoTitle) homepageInfoTitle.textContent = `About ${homepageAppName}`;
+  const homepageFunctionality = document.querySelector("#homepageFunctionality");
+  if (homepageFunctionality) {
+    homepageFunctionality.textContent =
+      `${homepageAppName} helps patients discover participating hospitals, clinics, and doctors, then request appointment bookings with selected providers.`;
+  }
+  const homepageGoogleData = document.querySelector("#homepageGoogleData");
+  if (homepageGoogleData) {
+    homepageGoogleData.textContent =
+      `${homepageAppName} uses Google Sign-In to securely authenticate patients. When authorized by the user, we access your Google Drive appdata scope solely to store and sync your appointment booking receipts locally and privately within your own Drive storage.`;
+  }
+  const linkChoiceTitle = document.querySelector("#hospitalLinkChoice .link-choice-card h2");
+  if (linkChoiceTitle) {
+    linkChoiceTitle.textContent = homepageAppName;
+  }
   const linkChoiceText = document.querySelector("#hospitalLinkChoice .link-choice-card > p:not(.eyebrow)");
   if (linkChoiceText) {
-    linkChoiceText.textContent = `Continue in browser or install ${APP_DISPLAY_NAME}.`;
+    linkChoiceText.textContent = `${homepageAppName} helps patients open hospital booking links and request appointments online. Continue in browser or install ${APP_DISPLAY_NAME}.`;
   }
   if (els.installAppBtn) {
     els.installAppBtn.href = PATIENT_APP_INSTALL_URL;
@@ -560,12 +608,13 @@ async function writePrivateRecord(key, value) {
 }
 
 function bindEvents() {
-  const on = (element, eventName, handler) => {
-    if (element) element.addEventListener(eventName, handler);
-  };
-
   on(els.signInBtn, "click", async () => {
     clearStatus();
+    if (!hasAcceptedTerms()) {
+      showStatus("Accept the Terms and Conditions before signing in.", true);
+      updateTermsGate();
+      return;
+    }
     els.signInBtn.disabled = true;
     els.signInBtn.textContent = "Opening sign in...";
     try {
@@ -575,6 +624,15 @@ function bindEvents() {
       els.signInBtn.disabled = false;
       els.signInBtn.textContent = "Sign in";
     }
+  });
+
+  on(els.termsAcceptCheck, "change", () => {
+    if (els.termsAcceptCheck.checked) {
+      localStorage.setItem(TERMS_ACCEPTED_KEY, "true");
+    } else {
+      localStorage.removeItem(TERMS_ACCEPTED_KEY);
+    }
+    updateTermsGate();
   });
 
   on(els.continueWebBtn, "click", async () => {
@@ -789,6 +847,7 @@ function renderAuth() {
   els.myBookingsBtn.hidden = !signedIn;
   els.topCityPill.hidden = !signedIn;
   els.signedOutSearchPrompt.hidden = signedIn;
+  if (!signedIn) updateTermsGate();
   if (signedIn) {
     els.cityPanel.removeAttribute("hidden");
     els.searchForm.removeAttribute("hidden");
@@ -806,6 +865,19 @@ function renderAuth() {
     els.searchResults.innerHTML = "";
     updateCityLabels("Choose city");
   }
+}
+
+function hasAcceptedTerms() {
+  return localStorage.getItem(TERMS_ACCEPTED_KEY) === "true";
+}
+
+function updateTermsGate() {
+  const accepted = hasAcceptedTerms();
+  if (els.termsAcceptCheck) els.termsAcceptCheck.checked = accepted;
+  els.signInBtn.disabled = !accepted;
+  els.signInBtn.title = accepted
+    ? ""
+    : "Accept the Terms and Conditions before signing in.";
 }
 
 function loadProfile() {
@@ -1954,7 +2026,7 @@ function showAuthError(error) {
     rawMessage.toLowerCase().includes("redirect_uri_mismatch") ||
     rawMessage.toLowerCase().includes("redirect uri mismatch");
   const resolvedMessage = redirectMismatch
-    ? "Google sign-in redirect URI is not authorized. Add https://vana-apps.web.app/ to the OAuth client's authorized redirect URIs."
+    ? "Google sign-in redirect URI is not authorized. Add the current web app origin to the OAuth client's authorized redirect URIs."
     : messageByCode[code] || rawMessage || "Google sign-in failed.";
   const serverResponse = error?.customData?._tokenResponse?.error?.message
     || error?.customData?._tokenResponse?.error

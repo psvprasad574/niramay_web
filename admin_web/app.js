@@ -34,14 +34,19 @@ const URL_PARAMS = new URLSearchParams(location.search);
 const FIREBASE_APP_CHECK_SITE_KEY = ADMIN_CONFIG.appCheckSiteKey || "";
 const MARKET_COUNTRY = normalizeMarket(URL_PARAMS.get("market") || ADMIN_CONFIG.marketCountry);
 const IS_US_MARKET = MARKET_COUNTRY === "US";
+const COLLECTION_PREFIX = sanitizePrefix(ADMIN_CONFIG.collectionPrefix);
+const FUNCTIONS_PREFIX = sanitizePrefix(ADMIN_CONFIG.functionsPrefix);
 const BRAND_NAME = ADMIN_CONFIG.brandName || (IS_US_MARKET ? "Aura" : "Niramay");
 const APP_DISPLAY_NAME = ADMIN_CONFIG.appDisplayName || `${BRAND_NAME} Admin`;
 const MAX_PHONE_LENGTH = 25;
 const APPOINTMENT_CANCEL_CUTOFF_MS = 3 * 60 * 60 * 1000;
 const APP_CHECK_CONFIG_ERROR =
   "Admin web App Check is not configured. Add the Firebase App Check reCAPTCHA Enterprise site key before calling Cloud Functions.";
-const PATIENT_WEB_BASE_URL = ADMIN_CONFIG.patientWebBaseUrl || "https://vana-apps.web.app";
+const PATIENT_WEB_BASE_URL =
+  ADMIN_CONFIG.patientWebBaseUrl ||
+  (MARKET_COUNTRY === "US" ? "https://us.vanaapps.org" : "https://in.vanaapps.org");
 const FIREBASE_CONFIG_URL = "/__/firebase/init.json";
+const TERMS_ACCEPTED_KEY = `niramay.admin.${MARKET_COUNTRY.toLowerCase()}.terms.v1`;
 
 // ---------------------------------------------------------------------------
 // DOM
@@ -49,6 +54,7 @@ const FIREBASE_CONFIG_URL = "/__/firebase/init.json";
 const els = {
   signInBtn: document.querySelector("#signInBtn"),
   signOutBtn: document.querySelector("#signOutBtn"),
+  termsAcceptCheck: document.querySelector("#termsAcceptCheck"),
   statusPanel: document.querySelector("#statusPanel"),
   signInView: document.querySelector("#signInView"),
   dashboardView: document.querySelector("#dashboardView"),
@@ -187,8 +193,18 @@ function normalizeMarket(value) {
   return market === "US" ? "US" : "IN";
 }
 
+function sanitizePrefix(value) {
+  const prefix = String(value || "").trim();
+  return /^[A-Za-z0-9_]*$/.test(prefix) ? prefix : "";
+}
+
 function collectionName(baseName) {
-  return IS_US_MARKET ? `us_${baseName}` : baseName;
+  return `${COLLECTION_PREFIX}${baseName}`;
+}
+
+function functionName(name) {
+  if (!FUNCTIONS_PREFIX) return name;
+  return `${FUNCTIONS_PREFIX}${name}`;
 }
 
 function collectionRef(baseName, ...segments) {
@@ -304,7 +320,7 @@ async function callFunction(name, data = {}) {
   if (!state.auth?.currentUser) throw new Error("Sign in first.");
   if (!FIREBASE_APP_CHECK_SITE_KEY) throw new Error(APP_CHECK_CONFIG_ERROR);
   await state.auth.currentUser.getIdToken(true);
-  return httpsCallable(state.functions, name)({ market: MARKET_COUNTRY, ...data });
+  return httpsCallable(state.functions, functionName(name))({ market: MARKET_COUNTRY, ...data });
 }
 
 function sanitizeFormText(value, maxLength = 500) {
@@ -1047,6 +1063,7 @@ function renderAuth() {
   els.signInBtn.hidden = signedIn;
   els.signOutBtn.hidden = !signedIn;
   els.signInView.hidden = signedIn;
+  if (!signedIn) updateTermsGate();
   if (!signedIn) {
     els.dashboardView.hidden = true;
     state.hospitalId = null;
@@ -1059,6 +1076,19 @@ function renderAuth() {
       ? `Sign out (${state.user.displayName.split(" ")[0]})`
       : "Sign out";
   }
+}
+
+function hasAcceptedTerms() {
+  return localStorage.getItem(TERMS_ACCEPTED_KEY) === "true";
+}
+
+function updateTermsGate() {
+  const accepted = hasAcceptedTerms();
+  if (els.termsAcceptCheck) els.termsAcceptCheck.checked = accepted;
+  els.signInBtn.disabled = !accepted;
+  els.signInBtn.title = accepted
+    ? ""
+    : "Accept the Terms and Conditions before signing in.";
 }
 
 function renderHospital() {
@@ -1174,7 +1204,21 @@ function switchTab(tabName) {
 function bindEvents() {
   els.signInBtn.addEventListener("click", () => {
     clearStatus();
+    if (!hasAcceptedTerms()) {
+      showStatus("Accept the Terms and Conditions before signing in.", true);
+      updateTermsGate();
+      return;
+    }
     startGoogleSignIn();
+  });
+
+  els.termsAcceptCheck?.addEventListener("change", () => {
+    if (els.termsAcceptCheck.checked) {
+      localStorage.setItem(TERMS_ACCEPTED_KEY, "true");
+    } else {
+      localStorage.removeItem(TERMS_ACCEPTED_KEY);
+    }
+    updateTermsGate();
   });
 
   els.signOutBtn.addEventListener("click", () => signOut(state.auth));

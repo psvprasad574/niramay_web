@@ -24,16 +24,18 @@ This creates:
 ../niramay_apps/web_dist/patient_us
 ```
 
-India builds use the Niramay brand and default collections. USA builds use the
-Aura brand and `us_*` collections.
+India builds use the Niramay brand and the India Firebase project. USA builds
+use the Aura brand and the Aura Firebase project. Both projects use the same
+Firestore collection names.
 
 Deploy from `../niramay_apps`:
 
 ```sh
-firebase deploy --only hosting:patient-in --project vana-apps
-firebase deploy --only hosting:patient-us --project vana-apps
+firebase deploy --only hosting:patient-in --project india
+firebase deploy --only hosting:patient-us --project us
 ```
 
-Target mappings live in `../niramay_apps/.firebaserc`. Current Hosting site IDs
-are `vana-apps` and `vana-apps-us`. If Firebase Hosting site IDs differ, update
-them with `firebase target:apply hosting <target> <site-id>`.
+Target mappings live in `../niramay_apps/.firebaserc`. India deploys to
+`vana-apps`; USA deploys to the Aura Firebase project `aura-apps-f806a`. If
+Firebase Hosting site IDs differ, update them with
+`firebase target:apply hosting <target> <site-id> --project <project-alias>`.

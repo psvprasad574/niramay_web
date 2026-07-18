@@ -25,13 +25,14 @@ node build-market-web.cjs
 Then deploy from `../niramay_apps`:
 
 ```sh
-firebase deploy --only hosting:patient-in --project vana-apps
-firebase deploy --only hosting:patient-us --project vana-apps
+firebase deploy --only hosting:patient-in --project india
+firebase deploy --only hosting:patient-us --project us
 ```
 
 The generated India app uses `Niramay`, `com.vana.health.patient.in`, and
-default Firestore collections. The generated USA app uses `Aura`,
-`com.vana.health.patient.us`, and `us_*` collections.
+the India Firebase project. The generated USA app uses `Aura`,
+`com.aura.health.patient`, and the Aura Firebase project. Both projects use the
+same Firestore collection names.
 
 Before deploying, make sure the `appCheckSiteKey` in `build-market-web.cjs`
 matches the Firebase App Check reCAPTCHA Enterprise site keys for the web apps.
@@ -41,7 +42,8 @@ Functions to return `UNAUTHENTICATED` even when the patient is signed in.
 To deploy functions with hosting:
 
 ```sh
-firebase deploy --only hosting:patient-in,hosting:patient-us,functions --project vana-apps
+firebase deploy --only hosting:patient-in,functions --project india
+firebase deploy --only hosting:patient-us,functions --project us
 ```
 
 The web app reads Firebase config from Hosting's reserved
